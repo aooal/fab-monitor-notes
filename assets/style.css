@@ -348,7 +348,7 @@ pre .m { color: #ffb86b; }
 .lab-card { border: 1px solid var(--card-border); background: var(--card); border-radius: var(--radius); padding: 20px; }
 
 .pg-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; }
-.pg-stage { position: relative; display: grid; grid-template-columns: auto auto 1fr; grid-template-rows: auto auto; gap: 14px 26px; align-items: center; padding: 16px; border-radius: 14px; background: var(--code-bg); border: 1px solid var(--card-border); min-height: 300px; overflow: hidden; color: #dfe6ff; }
+.pg-stage { position: relative; padding-top: 30px !important; display: grid; grid-template-columns: auto auto 1fr; grid-template-rows: auto auto; gap: 14px 26px; align-items: center; padding: 16px; border-radius: 14px; background: var(--code-bg); border: 1px solid var(--card-border); min-height: 300px; overflow: hidden; color: #dfe6ff; }
 .pg-col { display: flex; flex-direction: column; gap: 14px; }
 .pg-node { border: 1.5px solid rgba(255,255,255,.18); border-radius: 12px; padding: 10px 12px; background: rgba(255,255,255,.04); font-size: 13px; line-height: 1.5; transition: box-shadow .3s, border-color .3s; }
 .pg-node b { display: block; font-size: 14px; }
@@ -364,7 +364,7 @@ pre .m { color: #ffb86b; }
 .pg-node .st b { display: inline; font-size: inherit; color: var(--accent-3); }
 .pg-node .st b.RUN, .pg-node .st b.IN_PROCESS { color: var(--accent); }
 .pg-node .st b.DOWN, .pg-node .st b.ON_HOLD { color: var(--danger); }
-.pg-packet { position: absolute; left: 0; top: 0; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; color: #06101f; white-space: nowrap; pointer-events: none; z-index: 3; }
+.pg-packet { position: absolute; left: 0; top: 0; padding: 4px 12px; border-radius: 999px; font-size: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.45); font-weight: 700; color: #06101f; white-space: nowrap; pointer-events: none; z-index: 3; }
 .pg-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .pg-grp { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
 .pg-grp .gl { font-size: 12.5px; color: var(--muted); min-width: 4.5em; }

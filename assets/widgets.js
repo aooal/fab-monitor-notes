@@ -213,20 +213,27 @@
     }
     function center(node) {
       var r = node.getBoundingClientRect(), s = stage.getBoundingClientRect();
-      return { x: r.left - s.left + r.width / 2, y: r.top - s.top + r.height / 2 };
+      return { x: r.left - s.left + r.width / 2, y: r.top - s.top - 6 };
     }
     function fly(from, to, label, color) {
       if (reduce || !stage.animate) return Promise.resolve();
       var a = center(from), b = center(to);
       var p = el("div", "pg-packet", label); p.style.background = color;
       stage.appendChild(p);
+      function at(pt, sc) { return "translate(" + pt.x + "px," + pt.y + "px) translate(-50%,-50%) scale(" + sc + ")"; }
       var anim = p.animate([
-        { transform: "translate(" + a.x + "px," + a.y + "px) translate(-50%,-50%) scale(.6)", opacity: 0.2 },
-        { transform: "translate(" + a.x + "px," + a.y + "px) translate(-50%,-50%) scale(1)", opacity: 1, offset: 0.15 },
-        { transform: "translate(" + b.x + "px," + b.y + "px) translate(-50%,-50%) scale(1)", opacity: 1, offset: 0.85 },
-        { transform: "translate(" + b.x + "px," + b.y + "px) translate(-50%,-50%) scale(.6)", opacity: 0 }
+        { transform: at(a, 0.8), opacity: 0 },
+        { transform: at(a, 1), opacity: 1, offset: 0.12 },
+        { transform: at(b, 1), opacity: 1 }
       ], { duration: 1600 * SPEED, easing: "ease-in-out", fill: "forwards" });
-      return anim.finished.then(function () { p.remove(); }, function () { p.remove(); });
+      function done() {
+        // the label stays on the receiving node for a moment so it can be read
+        setTimeout(function () {
+          var f = p.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 400, fill: "forwards" });
+          f.onfinish = function () { p.remove(); };
+        }, 1400 * SPEED + 500);
+      }
+      return anim.finished.then(done, function () { p.remove(); });
     }
     function flash(id) { var n = $("#" + id, root); n.classList.remove("hit"); void n.offsetWidth; n.classList.add("hit"); }
     function uid() { return "evt-" + Math.random().toString(16).slice(2, 6); }
@@ -302,8 +309,8 @@
       log("send", "模擬器發布 " + ev.type + (ev.lotNo ? " " + ev.lotNo : "") + " eventId=" + ev.eventId);
       await fly($("#n-sim", root), $("#n-mq", root), ev.type.replace("machine.", ""), ev.color);
       flash("n-mq");
-      await sleep(500 * SPEED);
-      if (ev.type !== "lot.created") { await deliver("eq", ev); await sleep(500 * SPEED); }
+      await sleep(600 * SPEED);
+      if (ev.type !== "lot.created") { await deliver("eq", ev); await sleep(900 * SPEED); }
       if (ev.type !== "machine.status") await deliver("lot", ev);
     }
     var COLORS = { "lot.created": "#8b7bff", "machine.track-in": "#38e1c0", "machine.track-out": "#ffb86b", "machine.status": "#7aa7ff" };
