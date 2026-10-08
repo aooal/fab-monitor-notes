@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>訊息會重複送達:冪等消費與交易 · Fab Monitor 開發筆記</title>
+<title>訊息會重複送達：冪等消費與交易 · Fab Monitor 開發筆記</title>
 <meta name="description" content="at-least-once 意味著同一則訊息可能來兩次。processed_event 表、ON CONFLICT DO NOTHING 與「同一個交易」的設計。">
 <link rel="icon" href="../assets/avatar-sm.jpg">
 <link rel="stylesheet" href="../assets/style.css">
@@ -24,29 +24,29 @@
 <div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
 <div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
   <div class="eyebrow"><i></i>第 04 篇 / 共 08 篇</div>
-  <h1><span class="grad">訊息會重複送達:冪等消費與交易</span></h1>
+  <h1><span class="grad">訊息會重複送達：冪等消費與交易</span></h1>
   <div class="meta"><span>約 9 分鐘</span><span class="tag">冪等</span><span class="tag">交易</span><span class="tag">PostgreSQL</span></div>
 </div></div>
 <div class="layout">
 <article class="post">
-<p>RabbitMQ 保證的是 <strong>at-least-once</strong>(至少送達一次),不是 exactly-once。換句話說:同一則訊息,<strong>可能來兩次</strong>。例如消費者處理完、還沒回報「收到」就當機,RabbitMQ 會把訊息再送一次。</p>
-<p>如果處理的是「機台 EQP-01 進站 LOT-1」,做兩次可能第二次就失敗,或更糟:悄悄把資料弄錯。解法是讓消費者變成<strong>冪等(idempotent)</strong>:同一則訊息處理一次或十次,結果都一樣。</p>
+<p>RabbitMQ 保證的是 <strong>at-least-once</strong>（至少送達一次），不是 exactly-once。換句話說：同一則訊息，<strong>可能來兩次</strong>。例如消費者處理完、還沒回報「收到」就當機，RabbitMQ 會把訊息再送一次。</p>
+<p>如果處理的是「機台 EQP-01 進站 LOT-1」，做兩次可能第二次就失敗，或更糟：悄悄把資料弄錯。解法是讓消費者變成<strong>冪等（idempotent）</strong>：同一則訊息處理一次或十次，結果都一樣。</p>
 
-<h2>做法:記下「我處理過這個 eventId」</h2>
-<p>每個服務有一張 <code>processed_event</code> 表,只存已處理過的 eventId。處理訊息前先嘗試寫入:</p>
+<h2>做法：記下「我處理過這個 eventId」</h2>
+<p>每個服務有一張 <code>processed_event</code> 表，只存已處理過的 eventId。處理訊息前先嘗試寫入（以下為簡化示意）：</p>
 <pre><code><span class="k">INSERT INTO</span> processed_event (event_id, processed_at)
 <span class="k">VALUES</span> (?, now())
 <span class="k">ON CONFLICT</span> (event_id) <span class="k">DO NOTHING</span></code></pre>
-<p>這句 SQL 會回傳影響的列數。<strong>1 代表第一次看到,可以處理;0 代表重複,直接略過。</strong>因為判斷與寫入是同一個原子操作,兩個消費者同時搶也不會都通過。</p>
+<p>這句 SQL 會回傳影響的列數。<strong>1 代表第一次看到，可以處理；0 代表重複，直接略過。</strong>因為判斷與寫入是同一個原子操作，兩個消費者同時搶也不會都通過。</p>
 
-<h2>關鍵:標記與業務變更在「同一個交易」</h2>
-<p>順序其實很重要。想像兩種寫法:</p>
+<h2>關鍵：標記與業務變更在「同一個交易」</h2>
+<p>順序很重要。比較三種寫法：</p>
 <table>
 <thead><tr><th>寫法</th><th>中途當機的後果</th></tr></thead>
 <tbody>
-<tr><td>先標記「已處理」,再改業務資料(不同交易)</td><td>標記成功、業務沒改 → 重送時被當成重複略過,<strong>資料永遠漏掉</strong></td></tr>
-<tr><td>先改業務資料,再標記(不同交易)</td><td>業務改了、標記沒寫 → 重送時再做一次,<strong>重複套用</strong></td></tr>
-<tr><td><strong>同一個交易</strong>(我的做法)</td><td>要嘛都成功、要嘛都回滾 → 重送時乾淨地重來</td></tr>
+<tr><td>先標記「已處理」，再改業務資料（不同交易）</td><td>標記成功、業務沒改 → 重送時被當成重複略過，<strong>資料永遠漏掉</strong></td></tr>
+<tr><td>先改業務資料，再標記（不同交易）</td><td>業務改了、標記沒寫 → 重送時再做一次，<strong>重複套用</strong></td></tr>
+<tr><td><strong>同一個交易</strong>（本專案採用）</td><td>要嘛都成功、要嘛都回滾 → 重送時乾淨地重來</td></tr>
 </tbody></table>
 <pre><code><span class="n">@Transactional</span>
 <span class="k">public void</span> machineTrackIn(<span class="n">UUID</span> eventId, <span class="n">String</span> lotNo, <span class="n">String</span> step) {
@@ -54,33 +54,33 @@
     <span class="c">// 找 lot、套用變更;任何地方丟例外,上面的標記一起回滾</span>
     ...
 }</code></pre>
-<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p><code>@Transactional</code> 就是把整個方法包進 <code>TransactionScope</code>(或 EF Core 的 <code>SaveChanges</code> 單一交易),例外一丟就回滾。「Inbox pattern」是這種做法在 .NET 圈的常見名稱。</p></div>
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p><code>@Transactional</code> 就是把整個方法包進 <code>TransactionScope</code>（或 EF Core 的 <code>SaveChanges</code> 單一交易），例外一丟就回滾。「Inbox pattern」是這種做法在 .NET 圈的常見名稱。</p></div>
 
-<h2>我怎麼確認它真的有效?</h2>
-<p>寫了三個 Testcontainers 整合測試,其中最重要的一個叫「回滾後可以再成功」:</p>
+<h2>如何確認它有效？</h2>
+<p>寫了三個 Testcontainers 整合測試，其中最重要的一個叫「回滾後可以再成功」：</p>
 <ol>
-<li>送一則會失敗的事件(例如 lot 不存在)→ 例外 → 交易回滾。</li>
+<li>送一則會失敗的事件（例如 lot 不存在）→ 例外 → 交易回滾。</li>
 <li>確認 <code>processed_event</code> 裡<strong>沒有</strong>這個 eventId。</li>
-<li>先把 lot 補進去,再送同一則 eventId → 這次成功。</li>
+<li>先把 lot 補進去，再送同一則 eventId → 這次成功。</li>
 </ol>
-<p>這證明「失敗不會留下假的已處理紀錄」。如果標記是獨立交易,這個測試會失敗。</p>
+<p>這證明「失敗不會留下假的已處理紀錄」。如果標記是獨立交易，這個測試會失敗。</p>
 
-<div class="callout warn"><b class="t">我手動測試時也驗證過</b><p>在 RabbitMQ 管理介面手動補發一則訊息時,如果重複使用舊的 eventId,系統會把它當成重複略過;要換新的 UUID 才會真的處理。這正是冪等的設計行為。</p></div>
+<div class="callout warn"><b class="t">實測也看得到這個行為</b><p>在 RabbitMQ 管理介面手動補發訊息時，如果重複使用舊的 eventId，系統會當成重複而略過；換新的 UUID 才會真的處理。這正是冪等的預期行為。</p></div>
 
-<h2>還沒解決的:發布端也會丟</h2>
-<p>消費端做好了,發布端還有一個洞。equipment-service 目前是「資料庫交易提交之後」才發布事件(publish-after-commit)。如果提交成功、但發布前當機,資料變了而事件沒發出去。</p>
-<p>標準解法是 <strong>Outbox pattern</strong>:把「要發布的事件」跟業務資料寫進同一個交易,再由另一個程序把它送出去。目前先記在待辦,等主要功能完成後再補,也會在 README 誠實標示這個限制。</p>
+<h2>已知限制：發布端也可能遺失事件</h2>
+<p>消費端做好了，發布端還有一個洞。equipment-service 目前是「資料庫交易提交之後」才發布事件（publish-after-commit）。如果提交成功、但發布前當機，資料變了而事件沒發出去。</p>
+<p>標準解法是 <strong>Outbox pattern</strong>：把「要發布的事件」跟業務資料寫進同一個交易，再由另一個程序把它送出去。目前列為後續改善項目，並在 README 中標明這個限制。</p>
 
-<h2>另一個已知取捨</h2>
-<p>equipment-service 與 lot-service 各自獨立消費同一則機台事件。如果其中一個拒收而另一個成功處理,兩邊會短暫不一致。我接受這個取捨,並寫下日後可以加一個「對帳」機制來偵測。</p>
+<h2>另一個設計取捨</h2>
+<p>equipment-service 與 lot-service 各自獨立消費同一則機台事件。如果其中一個拒收而另一個成功處理，兩邊會暫時不一致。目前接受這個取捨，日後可以加入「對帳」機制來偵測差異。</p>
 
-<div class="post-nav"><a class="prev" href="03-rabbitmq.html"><small>← 上一篇</small>第 2 週:用 RabbitMQ 把服務串起來</a><a class="next" href="05-simulator.html"><small>下一篇 →</small>機台模擬器:沒有真機台,就自己造事件</a></div>
+<div class="post-nav"><a class="prev" href="03-rabbitmq.html"><small>← 上一篇</small>第 2 週：用 RabbitMQ 把服務串起來</a><a class="next" href="05-simulator.html"><small>下一篇 →</small>機台模擬器：沒有真機台，就自己造事件</a></div>
 </article>
 <aside class="toc" id="toc"><b>本文目錄</b></aside>
 </div>
 
 <footer class="site-footer"><div class="wrap">
-  <p>Fab Monitor 是個人練習專案,以<strong>模擬資料</strong>示範批次與設備事件監控,與任何真實半導體廠或其內部系統無關。</p>
+  <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
   <p class="by"><img src="../assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="40" height="40">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
 </div></footer>
 <script src="../assets/site.js"></script>

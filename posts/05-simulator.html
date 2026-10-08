@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>機台模擬器:沒有真機台,就自己造事件 · Fab Monitor 開發筆記</title>
+<title>機台模擬器：沒有真機台，就自己造事件 · Fab Monitor 開發筆記</title>
 <meta name="description" content="可重現的隨機、故意送壞訊息、啟動時對齊真實狀態;以及「找不到 lot 要不要自動建立」的設計取捨。">
 <link rel="icon" href="../assets/avatar-sm.jpg">
 <link rel="stylesheet" href="../assets/style.css">
@@ -24,56 +24,56 @@
 <div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
 <div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
   <div class="eyebrow"><i></i>第 05 篇 / 共 08 篇</div>
-  <h1><span class="grad">機台模擬器:沒有真機台,就自己造事件</span></h1>
+  <h1><span class="grad">機台模擬器：沒有真機台，就自己造事件</span></h1>
   <div class="meta"><span>約 10 分鐘</span><span class="tag">模擬器</span><span class="tag">設計取捨</span></div>
 </div></div>
 <div class="layout">
 <article class="post">
-<p>我沒有真的機台,但我想看到一整條事件流跑起來。所以做了 <code>equipment-simulator</code>:它假裝是三台機台(<code>EQP-ETCH-01</code>、<code>EQP-ETCH-02</code>、<code>EQP-LITHO-01</code>),定時把事件丟進 RabbitMQ。</p>
+<p>為了讓整條事件流能在本機完整跑起來，我做了 <code>equipment-simulator</code>：它扮演三台機台（<code>EQP-ETCH-01</code>、<code>EQP-ETCH-02</code>、<code>EQP-LITHO-01</code>），定時把事件丟進 RabbitMQ。</p>
 
 <h2>模擬的是什麼</h2>
 <ul>
-<li>每批 Lot 25 片晶圓,依序經過五個站點:LITHO → ETCH → CVD → CMP → IMPLANT。</li>
-<li>機台進站、出站,偶爾故障(DOWN 機率 5%),之後再恢復。</li>
-<li>每次啟動產生一組新的批號前綴,例如 <code>LOT-10081531-</code>,避免和上次跑的撞號。</li>
+<li>每批 Lot 25 片晶圓，依序經過五個站點：LITHO → ETCH → CVD → CMP → IMPLANT。</li>
+<li>機台進站、出站，偶爾故障（DOWN 機率 5%），之後再恢復。</li>
+<li>每次啟動產生一組新的批號前綴，例如 <code>LOT-10081531-</code>，避免和上次跑的撞號。</li>
 </ul>
 
-<h2>設計一:核心邏輯是純 Java</h2>
-<p>「這一個 tick 該發什麼事件」的邏輯放在 <code>FabSimulation</code>,不依賴 Spring、不依賴 RabbitMQ,只透過一個介面把事件交出去。好處是可以用單元測試驗證,而不用真的開 RabbitMQ。</p>
-<p>它還接受一個隨機種子:<strong>同樣的種子跑出同樣的事件序列</strong>。這讓測試可以重現:「種子 42 時第 7 個 tick 應該機台故障」是個確定的斷言,不會時過時不過。</p>
-<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>就像把 <code>new Random(seed)</code> 傳進去而不是在裡面 <code>new Random()</code>;把時間也當參數傳(<code>Clock</code>),測試才不會被「現在幾點」影響。</p></div>
+<h2>設計一：核心邏輯是純 Java</h2>
+<p>「這一個 tick 該發什麼事件」的邏輯放在 <code>FabSimulation</code>，不依賴 Spring、不依賴 RabbitMQ，只透過一個介面把事件交出去。好處是可以用單元測試驗證，而不用真的開 RabbitMQ。</p>
+<p>它還接受一個隨機種子：<strong>同樣的種子跑出同樣的事件序列</strong>。這讓測試可以重現：「種子 42 時第 7 個 tick 應該機台故障」是個確定的斷言，不會有時過、有時不過。</p>
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>就像把 <code>new Random(seed)</code> 傳進去而不是在裡面 <code>new Random()</code>；把時間也當參數傳（<code>Clock</code>），測試才不會被「現在幾點」影響。</p></div>
 
-<h2>設計二:故意送壞訊息</h2>
-<p>真實世界一定會有壞資料。模擬器有 2% 的機率對 <code>machine.track-in</code> 送一則格式錯誤的訊息(例如 <code>eventId</code> 不是 UUID)。目的是讓死信佇列有東西可看,也驗證消費者面對壞資料時不會卡死。</p>
+<h2>設計二：故意送壞訊息</h2>
+<p>真實世界一定會有壞資料。模擬器有 2% 的機率對 <code>machine.track-in</code> 送一則格式錯誤的訊息（例如 <code>eventId</code> 不是 UUID）。目的是讓死信佇列有東西可看，也驗證消費者面對壞資料時不會卡死。</p>
 
-<h2>設計取捨:找不到 lot 要不要自動建立?</h2>
-<p>lot-service 訂閱 track-in 事件時,如果事件裡的 lot 不存在,直覺的做法是「自動建一筆」。我一開始也這樣想,後來發現行不通:</p>
+<h2>設計取捨：找不到 lot 要不要自動建立？</h2>
+<p>lot-service 訂閱 track-in 事件時，如果事件裡的 lot 不存在，直覺的做法是「自動建一筆」，但這行不通：</p>
 <table>
 <thead><tr><th>做法</th><th>問題</th></tr></thead>
 <tbody>
-<tr><td>找不到就自動建立</td><td>建立一批 Lot 需要<strong>產品代號與數量</strong>,而 track-in 事件根本沒有這些資料。要不就填假值(資料變髒),要不就改事件塞進不屬於它的欄位。</td></tr>
-<tr><td>找不到就丟死信佇列</td><td>資料完整性有保障,但需要有人負責「先建立 Lot」。</td></tr>
-<tr><td><strong>新增 <code>lot.created</code> 事件</strong>(採用)</td><td>建立批次是一個獨立的事實,由來源明確宣告;之後的事件找不到 lot 才是真正的異常。</td></tr>
+<tr><td>找不到就自動建立</td><td>建立一批 Lot 需要<strong>產品代號與數量</strong>，而 track-in 事件根本沒有這些資料。要不就填假值（資料變髒），要不就改事件塞進不屬於它的欄位。</td></tr>
+<tr><td>找不到就丟死信佇列</td><td>資料完整性有保障，但需要有人負責「先建立 Lot」。</td></tr>
+<tr><td><strong>新增 <code>lot.created</code> 事件</strong>（採用）</td><td>建立批次是一個獨立的事實，由來源明確宣告；之後的事件找不到 lot 才是真正的異常。</td></tr>
 </tbody></table>
-<p>所以模擬器在第一次提到某批 Lot 之前,會先發一則 <code>lot.created</code>。lot-service 收到就建立批次(已存在則忽略,冪等)。而「消費者絕不憑空捏造資料」成了契約裡的原則。</p>
-<p>這也是業界常見的想法:<strong>資料的擁有者負責宣告它的誕生</strong>,下游不要猜。</p>
+<p>所以模擬器在第一次提到某批 Lot 之前，會先發一則 <code>lot.created</code>。lot-service 收到就建立批次（已存在則忽略，冪等）。而「消費者絕不憑空捏造資料」成了契約裡的原則。</p>
+<p>這也是業界常見的想法：<strong>資料的擁有者負責宣告它的誕生</strong>，下游不要猜。</p>
 
-<h2>痛點與改善:重啟後要手動重設機台?</h2>
-<p>測試時我發現:每次停掉模擬器再啟動,機台的真實狀態還留在 equipment-service(例如某台還握著一批 Lot 或是 DOWN),模擬器卻以為大家都是閒置,於是新的事件和現況對不上,被拒收,還得手動去 RabbitMQ 修。</p>
-<p>原因很單純:<strong>模擬器有自己的記憶,真實狀態在另一個服務裡。</strong>兩邊的記憶不一致。</p>
-<p>解法是「啟動時對齊」:模擬器啟動時先呼叫 equipment-service 的 REST API 讀取三台機台的真實狀態,再從那個狀態接著模擬。若 equipment-service 還沒開,模擬器不會亂猜,而是記一行警告,每個 tick 重試,直到三台機台都問到為止才開始發事件。對齊的開關(<code>simulator.align-on-start</code>)可以關掉。</p>
-<div class="callout tip"><b class="t">業界也這樣做嗎?</b><p>思路相同:任何「帶有本地狀態的元件」重啟時,都應該先與真實來源(source of truth)同步,而不是假設從零開始。這跟服務啟動時重建快取、消費者從上次 offset 繼續是同一個概念。</p></div>
+<h2>改善：啟動時對齊機台狀態</h2>
+<p>實測時發現：每次停掉模擬器再啟動，機台的真實狀態還留在 equipment-service（例如某台仍握著一批 Lot，或是 DOWN），模擬器卻以為全部閒置，於是新的事件與現況對不上而被拒收，必須手動到 RabbitMQ 修復。</p>
+<p>原因很單純：<strong>模擬器有自己的記憶，真實狀態在另一個服務裡。</strong>兩邊的記憶不一致。</p>
+<p>解法是「啟動時對齊」：模擬器啟動時先呼叫 equipment-service 的 REST API 讀取三台機台的真實狀態，再從那個狀態接著模擬。若 equipment-service 還沒開，模擬器不會亂猜，而是記一行警告，每個 tick 重試，直到三台機台都問到為止才開始發事件。對齊的開關（<code>simulator.align-on-start</code>）可以關掉。</p>
+<div class="callout tip"><b class="t">業界也這樣做嗎？</b><p>思路相同：任何「帶有本地狀態的元件」重啟時，都應該先與真實來源（source of truth）同步，而不是假設從零開始。這跟服務啟動時重建快取、消費者從上次 offset 繼續是同一個概念。</p></div>
 
 <h2>啟動順序提醒</h2>
-<p>RabbitMQ → lot-service、equipment-service → 註冊機台 → 模擬器。原因見前一篇:queue 是消費者宣告的,模擬器太早發訊息會沒有人接。</p>
+<p>RabbitMQ → lot-service、equipment-service → 註冊機台 → 模擬器。原因見前一篇：queue 是消費者宣告的，模擬器太早發訊息會沒有人接。</p>
 
-<div class="post-nav"><a class="prev" href="04-idempotency.html"><small>← 上一篇</small>訊息會重複送達:冪等消費與交易</a><a class="next" href="06-failure.html"><small>下一篇 →</small>失敗處理:業務錯誤不重試,技術錯誤才重試</a></div>
+<div class="post-nav"><a class="prev" href="04-idempotency.html"><small>← 上一篇</small>訊息會重複送達：冪等消費與交易</a><a class="next" href="06-failure.html"><small>下一篇 →</small>失敗處理：業務錯誤不重試，技術錯誤才重試</a></div>
 </article>
 <aside class="toc" id="toc"><b>本文目錄</b></aside>
 </div>
 
 <footer class="site-footer"><div class="wrap">
-  <p>Fab Monitor 是個人練習專案,以<strong>模擬資料</strong>示範批次與設備事件監控,與任何真實半導體廠或其內部系統無關。</p>
+  <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
   <p class="by"><img src="../assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="40" height="40">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
 </div></footer>
 <script src="../assets/site.js"></script>

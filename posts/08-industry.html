@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>業界怎麼做?SECS/GEM、MQTT、Kafka 與雲端服務對照 · Fab Monitor 開發筆記</title>
+<title>業界怎麼做？SECS/GEM、MQTT、Kafka 與雲端服務對照 · Fab Monitor 開發筆記</title>
 <meta name="description" content="模擬專案跟真實半導體廠的差距在哪?換掉 RabbitMQ 之後,exchange 與 queue 會變成什麼?">
 <link rel="icon" href="../assets/avatar-sm.jpg">
 <link rel="stylesheet" href="../assets/style.css">
@@ -24,76 +24,76 @@
 <div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
 <div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
   <div class="eyebrow"><i></i>第 08 篇 / 共 08 篇</div>
-  <h1><span class="grad">業界怎麼做?SECS/GEM、MQTT、Kafka 與雲端服務對照</span></h1>
+  <h1><span class="grad">業界怎麼做？SECS/GEM、MQTT、Kafka 與雲端服務對照</span></h1>
   <div class="meta"><span>約 8 分鐘</span><span class="tag">業界對照</span><span class="tag">Kafka</span><span class="tag">MQTT</span></div>
 </div></div>
 <div class="layout">
 <article class="post">
-<p>做模擬專案的人最常被問(也最常問自己)的就是:「真實的系統是這樣嗎?」這篇是我整理的一些概念對照。<strong>這些是一般性的公開技術知識,不是任何特定公司內部做法的描述。</strong>
+<p>做模擬專案的人最常被問（也最常問自己）的就是：「真實的系統是這樣嗎？」這篇是我整理的一些概念對照。<strong>這些是一般性的公開技術知識，不是任何特定公司內部做法的描述。</strong>
 
 </p>
 
-<h2>SECS/GEM 與我們的事件匯流排,不在同一層</h2>
-<p>半導體設備與工廠系統之間的標準通訊協定是 <strong>SECS/GEM</strong>(SEMI 組織制定的 SECS-II 訊息格式與 GEM 行為規範,常透過 HSMS 在 TCP/IP 上傳輸)。它處理的是<strong>機台 ↔ 主機(Host)</strong>這一段:機台回報事件、狀態、警報,主機下達命令與配方。</p>
-<p>我的 Fab Monitor 在更上面一層:假設事件已經從機台出來了,這些事件如何在<strong>企業內部的服務之間</strong>流動與被處理。所以:</p>
+<h2>SECS/GEM 與我們的事件匯流排，不在同一層</h2>
+<p>半導體設備與工廠系統之間的標準通訊協定是 <strong>SECS/GEM</strong>（SEMI 組織制定的 SECS-II 訊息格式與 GEM 行為規範，常透過 HSMS 在 TCP/IP 上傳輸）。它處理的是<strong>機台 ↔ 主機（Host）</strong>這一段：機台回報事件、狀態、警報，主機下達命令與配方。</p>
+<p>我的 Fab Monitor 在更上面一層：假設事件已經從機台出來了，這些事件如何在<strong>企業內部的服務之間</strong>流動與被處理。所以：</p>
 <table>
 <thead><tr><th>層次</th><th>常見技術</th><th>在我的專案</th></tr></thead>
 <tbody>
-<tr><td>機台 ↔ 主機</td><td>SECS/GEM(HSMS)</td><td>由模擬器取代(它直接發事件)</td></tr>
-<tr><td>主機 / 閘道 → 服務之間</td><td>訊息佇列、事件串流(RabbitMQ、Kafka、雲端服務)</td><td><strong>RabbitMQ</strong></td></tr>
+<tr><td>機台 ↔ 主機</td><td>SECS/GEM(HSMS)</td><td>由模擬器取代（它直接發事件）</td></tr>
+<tr><td>主機 / 閘道 → 服務之間</td><td>訊息佇列、事件串流（RabbitMQ、Kafka、雲端服務）</td><td><strong>RabbitMQ</strong></td></tr>
 <tr><td>服務對外</td><td>REST / gRPC</td><td>REST + Swagger</td></tr>
 </tbody></table>
-<p>如果要讓模擬更貼近現實,可以在模擬器前再加一層「把 SECS/GEM 風格的事件轉成內部事件」的轉接器,這會是不錯的擴充方向。
+<p>如果要讓模擬更貼近現實，可以在模擬器前再加一層「把 SECS/GEM 風格的事件轉成內部事件」的轉接器，這會是不錯的擴充方向。
 
 </p>
 
-<h2>AMQP 還是 MQTT?</h2>
-<p>我用的是 <strong>AMQP 0-9-1</strong>(RabbitMQ 的原生協定),不是 MQTT。兩者定位不同:</p>
+<h2>AMQP 還是 MQTT？</h2>
+<p>我用的是 <strong>AMQP 0-9-1</strong>（RabbitMQ 的原生協定），不是 MQTT。兩者定位不同：</p>
 <ul>
-<li><strong>AMQP:</strong>功能完整的企業訊息協定,有 exchange、routing、佇列、確認、死信。適合服務之間可靠的工作流。</li>
-<li><strong>MQTT:</strong>極輕量的發布/訂閱協定,為弱網路、小裝置設計。適合大量感測器上報高頻遙測資料。</li>
+<li><strong>AMQP：</strong>功能完整的企業訊息協定，有 exchange、routing、佇列、確認、死信。適合服務之間可靠的工作流。</li>
+<li><strong>MQTT：</strong>極輕量的發布/訂閱協定，為弱網路、小裝置設計。適合大量感測器上報高頻遙測資料。</li>
 </ul>
-<p>兩者並不衝突:RabbitMQ 也有 MQTT 外掛。若之後想模擬感測器遙測(溫度、壓力等高頻資料),MQTT 會是自然的選擇,可以在新增「telemetry」功能時再引入。</p>
+<p>兩者並不衝突：RabbitMQ 也有 MQTT 外掛。若之後想模擬感測器遙測（溫度、壓力等高頻資料），MQTT 會是自然的選擇，可以在新增「telemetry」功能時再引入。</p>
 
-<h2>如果不用 RabbitMQ,exchange 和 queue 會變成什麼?</h2>
-<p>概念可以對應,但名稱與模型不同。以下是大致的對照(各產品細節仍有差異,選用前請查官方文件):</p>
+<h2>如果不用 RabbitMQ，exchange 和 queue 會變成什麼？</h2>
+<p>概念可以對應，但名稱與模型不同。以下是大致的對照（各產品細節仍有差異，選用前請查官方文件）：</p>
 <table>
 <thead><tr><th>我學到的概念</th><th>Apache Kafka</th><th>Azure Service Bus</th><th>AWS</th></tr></thead>
 <tbody>
-<tr><td>發布者送訊息的目的地(exchange)</td><td>Topic</td><td>Topic</td><td>SNS Topic / EventBridge 事件匯流排</td></tr>
-<tr><td>消費者各自的信箱(queue)</td><td>Consumer Group(各自維護讀取位置)</td><td>Subscription</td><td>SQS Queue(訂閱在 SNS 上)</td></tr>
-<tr><td>依標籤分送(routing key / binding)</td><td>通常用不同 Topic 或 partition key</td><td>Subscription 的過濾規則</td><td>EventBridge Rule / SNS 過濾政策</td></tr>
+<tr><td>發布者送訊息的目的地（exchange）</td><td>Topic</td><td>Topic</td><td>SNS Topic / EventBridge 事件匯流排</td></tr>
+<tr><td>消費者各自的信箱（queue）</td><td>Consumer Group（各自維護讀取位置）</td><td>Subscription</td><td>SQS Queue（訂閱在 SNS 上）</td></tr>
+<tr><td>依標籤分送（routing key / binding）</td><td>通常用不同 Topic 或 partition key</td><td>Subscription 的過濾規則</td><td>EventBridge Rule / SNS 過濾政策</td></tr>
 <tr><td>死信佇列</td><td>需自行設計 dead-letter topic</td><td>內建 dead-letter sub-queue</td><td>SQS Dead-letter Queue</td></tr>
 </tbody></table>
-<p>最大的差別在於<strong>模型</strong>:RabbitMQ 是「訊息被消費就從佇列消失」;Kafka 是「事件寫進日誌,消費者各自記錄讀到哪」,資料可以保留並重播。這也是為什麼需要「事件回放」或超高吞吐量時常選 Kafka,而需要靈活路由與逐則確認的工作流則常用 RabbitMQ 或雲端佇列服務。</p>
-<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>在 Azure 上,你最常碰到的是 Service Bus(對應 RabbitMQ 的工作流)與 Event Hubs(對應 Kafka 的串流)。學會 RabbitMQ 的概念,換到 Service Bus 時其實只是換名詞。</p></div>
+<p>最大的差別在於<strong>模型</strong>：RabbitMQ 是「訊息被消費就從佇列消失」；Kafka 是「事件寫進日誌，消費者各自記錄讀到哪」，資料可以保留並重播。這也是為什麼需要「事件回放」或超高吞吐量時常選 Kafka，而需要靈活路由與逐則確認的工作流則常用 RabbitMQ 或雲端佇列服務。</p>
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>在 Azure 上，你最常碰到的是 Service Bus（對應 RabbitMQ 的工作流）與 Event Hubs（對應 Kafka 的串流）。學會 RabbitMQ 的概念，換到 Service Bus 時其實只是換名詞。</p></div>
 
-<h2>怎麼「看見」佇列?</h2>
-<p>RabbitMQ 有內建管理介面。換成其他系統,通常有對應工具:</p>
+<h2>怎麼「看見」佇列？</h2>
+<p>RabbitMQ 有內建管理介面。換成其他系統，通常有對應工具：</p>
 <ul>
-<li><strong>Kafka:</strong>Kafka UI、Redpanda Console、AKHQ 等,可以看 topic、partition 與 consumer lag。</li>
-<li><strong>Azure Service Bus:</strong>Azure Portal 與 Service Bus Explorer 可以看佇列長度、死信內容。</li>
-<li><strong>AWS SQS:</strong>Console 可以看可見/不可見訊息數,並可以 poll 看內容。</li>
-<li><strong>共通的監控:</strong>Prometheus + Grafana 把「佇列長度、消費延遲、死信數量」做成看板。這也是這個專案第 6 週要做的事(RabbitMQ 有 Prometheus 外掛可以直接輸出指標)。</li>
+<li><strong>Kafka</strong>：Kafka UI、Redpanda Console、AKHQ 等，可以看 topic、partition 與 consumer lag。</li>
+<li><strong>Azure Service Bus</strong>：Azure Portal 與 Service Bus Explorer 可以看佇列長度、死信內容。</li>
+<li><strong>AWS SQS</strong>：Console 可以看可見/不可見訊息數，並可以 poll 看內容。</li>
+<li><strong>共通的監控：</strong>Prometheus + Grafana 把「佇列長度、消費延遲、死信數量」做成看板。這也是這個專案第 6 週要做的事（RabbitMQ 有 Prometheus 外掛可以直接輸出指標）。</li>
 </ul>
 
-<h2>我會被問到的問題,與我的老實回答</h2>
+<h2>常見問題與我的回答</h2>
 <table>
 <thead><tr><th>問題</th><th>回答</th></tr></thead>
 <tbody>
-<tr><td>這跟真正的工廠系統有多像?</td><td>概念上有借鏡(批次、站點、設備狀態、事件驅動),但細節都是簡化出來的。沒有配方、製程參數、派工邏輯,也沒有 SECS/GEM。</td></tr>
-<tr><td>為什麼不用 Kafka?</td><td>這個規模的事件量用 RabbitMQ 就夠,而且它的 exchange / queue / 死信模型很適合學習路由與錯誤處理。若需要事件回放與大量吞吐,我會重新評估。</td></tr>
-<tr><td>可靠性夠嗎?</td><td>消費端有冪等與死信;發布端目前是交易後發布,可能遺失事件,正式做法是 Outbox,已列入待辦。</td></tr>
-<tr><td>下一步?</td><td>告警服務、API 閘道與 JWT,然後容器化、Kubernetes、監控。</td></tr>
+<tr><td>這跟真正的工廠系統有多像？</td><td>概念上有借鏡（批次、站點、設備狀態、事件驅動），但細節都是簡化出來的。沒有配方、製程參數、派工邏輯，也沒有 SECS/GEM。</td></tr>
+<tr><td>為什麼不用 Kafka？</td><td>這個規模的事件量用 RabbitMQ 就夠，而且它的 exchange / queue / 死信模型很適合學習路由與錯誤處理。若需要事件回放與大量吞吐，我會重新評估。</td></tr>
+<tr><td>可靠性夠嗎？</td><td>消費端有冪等與死信；發布端目前是交易後發布，可能遺失事件，正式做法是 Outbox，已列入待辦。</td></tr>
+<tr><td>下一步？</td><td>告警服務、API 閘道與 JWT，然後容器化、Kubernetes、監控。</td></tr>
 </tbody></table>
 
-<div class="post-nav"><a class="prev" href="07-pitfalls.html"><small>← 上一篇</small>踩坑紀錄:每個坑怎麼發現、怎麼修</a><span></span></div>
+<div class="post-nav"><a class="prev" href="07-pitfalls.html"><small>← 上一篇</small>問題與解法：開發中遇到的七個狀況</a><span></span></div>
 </article>
 <aside class="toc" id="toc"><b>本文目錄</b></aside>
 </div>
 
 <footer class="site-footer"><div class="wrap">
-  <p>Fab Monitor 是個人練習專案,以<strong>模擬資料</strong>示範批次與設備事件監控,與任何真實半導體廠或其內部系統無關。</p>
+  <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
   <p class="by"><img src="../assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="40" height="40">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
 </div></footer>
 <script src="../assets/site.js"></script>

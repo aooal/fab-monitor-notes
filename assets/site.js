@@ -89,6 +89,10 @@
     pre.appendChild(b);
   });
 
+  // ----- mail button (address assembled here so it is not plain text in the page) -----
+  var mb = document.getElementById("mailBtn");
+  if (mb) { mb.href = "mailto:" + mb.getAttribute("data-u") + "@" + mb.getAttribute("data-d"); }
+
   // ----- card spotlight -----
   document.querySelectorAll(".post-card").forEach(function (c) {
     c.addEventListener("mousemove", function (e) {

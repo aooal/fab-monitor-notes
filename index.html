@@ -26,26 +26,26 @@
  <div>
   <div class="eyebrow reveal"><i></i>個人練習專案 · 開發筆記</div>
   <h1 class="reveal d1">讓<span class="grad">機台資料</span>在<br>微服務之間流動</h1>
-  <p class="lead reveal d2">Fab Monitor 用假資料模擬工廠機台與批次(Lot)之間的事件交換,情境取材自晶圓廠:機台進站、出站、故障,服務之間用訊息佇列溝通。這裡記錄我怎麼設計、為什麼這樣做、踩過哪些坑,也寫給之後回頭複習的自己。</p>
+  <p class="lead reveal d2">Fab Monitor 用假資料模擬工廠機台與批次（Lot）之間的事件交換，情境取材自晶圓廠：機台進站、出站、故障，服務之間用訊息佇列溝通。這裡記錄我怎麼設計、為什麼這樣做、遇到哪些問題，也寫給之後回頭複習的自己。</p>
   <div class="btns reveal d3"><a class="btn primary" href="#posts">開始閱讀 →</a><a class="btn" href="posts/01-overview.html">先看整體架構</a></div>
-  <div class="notice reveal d3">這是模擬專案:所有資料與事件都由程式產生,不代表任何真實工廠或其內部系統的做法。</div>
+  <div class="notice reveal d3">這是模擬專案：所有資料與事件都由程式產生，不代表任何真實工廠或其內部系統的做法。</div>
  </div>
- <div class="hero-avatar reveal d2"><div class="ring"></div><img src="assets/avatar.jpg" alt="Shawn Chen 的卡通頭像:戴毛帽的藍色小人在寫程式" width="560" height="503"></div>
+ <div class="hero-avatar reveal d2"><div class="ring"></div><img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像:戴毛帽的藍色小人" width="256" height="256"></div>
 </div>
 </div></section>
 
 <section class="block" id="stats"><div class="wrap">
   <div class="stats">
-    <div class="stat reveal"><b data-count="3">0</b><span>已完成的服務(lot / equipment / simulator)</span></div>
-    <div class="stat reveal d1"><b data-count="116">0</b><span>自動化測試,全數通過</span></div>
-    <div class="stat reveal d2"><b data-count="8">0</b><span>篇設計與踩坑筆記</span></div>
-    <div class="stat reveal d3"><b data-count="6">0</b><span>週開發計畫(目前第 2 週結束)</span></div>
+    <div class="stat reveal"><b data-count="3">0</b><span>已完成的服務（lot / equipment / simulator）</span></div>
+    <div class="stat reveal d1"><b data-count="116">0</b><span>自動化測試，全數通過</span></div>
+    <div class="stat reveal d2"><b data-count="8">0</b><span>篇設計與開發筆記</span></div>
+    <div class="stat reveal d3"><b data-count="6">0</b><span>週開發計畫（目前第 2 週結束）</span></div>
   </div>
 </div></section>
 
 <section class="block" id="architecture"><div class="wrap">
   <h2 class="sec-title reveal">事件怎麼流動</h2>
-  <p class="sec-sub reveal">模擬器假裝是機台,把事件丟到同一個 exchange。兩個服務各自訂閱自己需要的事件,處理不了的訊息進死信佇列,等人處理。</p>
+  <p class="sec-sub reveal">模擬器假裝是機台，把事件丟到同一個 exchange。兩個服務各自訂閱自己需要的事件，處理不了的訊息進死信佇列，等人處理。</p>
   
 <div class="diagram reveal">
 <svg viewBox="0 0 960 430" role="img" aria-label="事件流架構圖:模擬器發布事件到 fab.events,equipment-service 與 lot-service 各自訂閱,失敗的訊息進入死信佇列">
@@ -66,7 +66,7 @@
 <g class="node svc"><rect x="620" y="50" width="190" height="64" rx="14"/><text x="715" y="79" text-anchor="middle">equipment-service</text><text class="small" x="715" y="98" text-anchor="middle">機台狀態 · PostgreSQL</text></g>
 <g class="node svc"><rect x="620" y="190" width="190" height="64" rx="14"/><text x="715" y="219" text-anchor="middle">lot-service</text><text class="small" x="715" y="238" text-anchor="middle">批次 Lot · PostgreSQL</text></g>
 <g class="node planned"><rect x="620" y="330" width="190" height="64" rx="14"/><text x="715" y="359" text-anchor="middle">alarm-service</text><text class="small" x="715" y="378" text-anchor="middle">第 3 週 · 規劃中</text></g>
-<g class="node dead"><rect x="180" y="340" width="280" height="64" rx="14"/><text x="320" y="369" text-anchor="middle">fab.events.dlx → *.dlq</text><text class="small" x="320" y="388" text-anchor="middle">死信佇列:留給人檢查的失敗訊息</text></g>
+<g class="node dead"><rect x="180" y="340" width="280" height="64" rx="14"/><text x="320" y="369" text-anchor="middle">fab.events.dlx → *.dlq</text><text class="small" x="320" y="388" text-anchor="middle">死信佇列：留給人檢查的失敗訊息</text></g>
 
 <text class="small" x="176" y="212">發布</text>
 <text class="small" x="448" y="140" transform="rotate(-38 448 140)">machine.*</text>
@@ -80,63 +80,63 @@
 <circle r="4.5" fill="#8b7bff"><animateMotion dur="2.4s" begin="1.0s" repeatCount="indefinite"><mpath href="#p3"/></animateMotion></circle>
 <circle r="4.5" fill="#ffb86b"><animateMotion dur="3.2s" begin="0.8s" repeatCount="indefinite"><mpath href="#p5"/></animateMotion></circle>
 </svg>
-<div class="legend"><span><i style="background:#38e1c0"></i>已完成的事件流</span><span><i style="background:#8a94b5"></i>規劃中(第 3 週)</span><span><i style="background:#ff6b8b"></i>失敗路徑</span></div>
+<div class="legend"><span><i style="background:#38e1c0"></i>已完成的事件流</span><span><i style="background:#8a94b5"></i>規劃中（第 3 週）</span><span><i style="background:#ff6b8b"></i>失敗路徑</span></div>
 </div>
 
 </div></section>
 
 <section class="block" id="posts"><div class="wrap">
   <h2 class="sec-title reveal">文章</h2>
-  <p class="sec-sub reveal">建議照順序讀;想直接看某個主題也可以。每篇都有「給 .NET 開發者的對照」。</p>
+  <p class="sec-sub reveal">建議照順序閱讀，也可以直接挑有興趣的主題。多數文章附有「給 .NET 開發者的對照」。</p>
   <div class="cards">
 <a class="post-card reveal d1" href="posts/01-overview.html">
-  <span class="no">NOTE 01</span><h3>為什麼做 Fab Monitor?整體架構一次看懂</h3><p>一個模擬晶圓廠批次與設備事件的微服務練習專案:四個服務、一條事件匯流排,以及我為什麼這樣切。</p>
+  <span class="no">NOTE 01</span><h3>為什麼做 Fab Monitor？整體架構一次看懂</h3><p>一個模擬晶圓廠批次與設備事件的微服務練習專案：四個服務、一條事件匯流排，以及我為什麼這樣切。</p>
   <span class="meta">約 8 分鐘 · 架構 / 微服務</span></a>
 <a class="post-card reveal d2" href="posts/02-hexagonal.html">
-  <span class="no">NOTE 02</span><h3>第 1 週:用六角架構寫出第一個服務 lot-service</h3><p>從 C#/.NET 的視角看 Spring Boot:領域、應用、Web、基礎設施四層,以及用 ArchUnit 把分層規則寫成會失敗的測試。</p>
+  <span class="no">NOTE 02</span><h3>第 1 週：用六角架構寫出第一個服務 lot-service</h3><p>從 C#/.NET 的視角看 Spring Boot：領域、應用、Web、基礎設施四層，以及用 ArchUnit 把分層規則寫成會失敗的測試。</p>
   <span class="meta">約 12 分鐘 · Spring Boot / 六角架構 / C# 對照</span></a>
 <a class="post-card reveal d3" href="posts/03-rabbitmq.html">
-  <span class="no">NOTE 03</span><h3>第 2 週:用 RabbitMQ 把服務串起來</h3><p>exchange、queue、binding、routing key、死信佇列各是什麼?事件契約怎麼訂?為什麼 queue 要由消費者宣告?</p>
+  <span class="no">NOTE 03</span><h3>第 2 週：用 RabbitMQ 把服務串起來</h3><p>exchange、queue、binding、routing key、死信佇列各是什麼？事件契約怎麼訂？為什麼 queue 要由消費者宣告？</p>
   <span class="meta">約 12 分鐘 · RabbitMQ / 事件驅動</span></a>
 <a class="post-card reveal d1" href="posts/04-idempotency.html">
-  <span class="no">NOTE 04</span><h3>訊息會重複送達:冪等消費與交易</h3><p>at-least-once 意味著同一則訊息可能來兩次。processed_event 表、ON CONFLICT DO NOTHING 與「同一個交易」的設計。</p>
+  <span class="no">NOTE 04</span><h3>訊息會重複送達：冪等消費與交易</h3><p>at-least-once 意味著同一則訊息可能來兩次。processed_event 表、ON CONFLICT DO NOTHING 與「同一個交易」的設計。</p>
   <span class="meta">約 9 分鐘 · 冪等 / 交易 / PostgreSQL</span></a>
 <a class="post-card reveal d2" href="posts/05-simulator.html">
-  <span class="no">NOTE 05</span><h3>機台模擬器:沒有真機台,就自己造事件</h3><p>可重現的隨機、故意送壞訊息、啟動時對齊真實狀態;以及「找不到 lot 要不要自動建立」的設計取捨。</p>
+  <span class="no">NOTE 05</span><h3>機台模擬器：沒有真機台，就自己造事件</h3><p>可重現的隨機、故意送壞訊息、啟動時對齊真實狀態；以及「找不到 lot 要不要自動建立」的設計取捨。</p>
   <span class="meta">約 10 分鐘 · 模擬器 / 設計取捨</span></a>
 <a class="post-card reveal d3" href="posts/06-failure.html">
-  <span class="no">NOTE 06</span><h3>失敗處理:業務錯誤不重試,技術錯誤才重試</h3><p>把失敗分成兩種,各走各的路;再把兩大段 stack trace 縮成一行 log。附真實踩坑過程。</p>
+  <span class="no">NOTE 06</span><h3>失敗處理：業務錯誤不重試，技術錯誤才重試</h3><p>把失敗分成兩種，各走各的路；再把兩大段 stack trace 縮成一行 log。</p>
   <span class="meta">約 9 分鐘 · 錯誤處理 / 死信佇列</span></a>
 <a class="post-card reveal d1" href="posts/07-pitfalls.html">
-  <span class="no">NOTE 07</span><h3>踩坑紀錄:每個坑怎麼發現、怎麼修</h3><p>兩個模擬器同時跑、queue 沒綁定導致訊息消失、CI 的資料庫、重複的 import……這些都是真的發生過的。</p>
-  <span class="meta">約 7 分鐘 · 除錯 / 經驗</span></a>
+  <span class="no">NOTE 07</span><h3>問題與解法：開發中遇到的七個狀況</h3><p>兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步等問題，以及各自的原因與做法。</p>
+  <span class="meta">約 5 分鐘 · 除錯 / 經驗</span></a>
 <a class="post-card reveal d2" href="posts/08-industry.html">
-  <span class="no">NOTE 08</span><h3>業界怎麼做?SECS/GEM、MQTT、Kafka 與雲端服務對照</h3><p>模擬專案跟真實半導體廠的差距在哪?換掉 RabbitMQ 之後,exchange 與 queue 會變成什麼?</p>
+  <span class="no">NOTE 08</span><h3>業界怎麼做？SECS/GEM、MQTT、Kafka 與雲端服務對照</h3><p>模擬專案跟真實半導體廠的差距在哪？換掉 RabbitMQ 之後，exchange 與 queue 會變成什麼？</p>
   <span class="meta">約 8 分鐘 · 業界對照 / Kafka / MQTT</span></a>
   </div>
 </div></section>
 
 <section class="block" id="roadmap"><div class="wrap">
   <h2 class="sec-title reveal">六週進度</h2>
-  <p class="sec-sub reveal">計畫分六週,每週一個可展示的成果。</p>
+  <p class="sec-sub reveal">計畫分六週，每週一個可展示的成果。</p>
   <div class="timeline">
     <div class="tl-item done reveal"><h3>第 1 週 · lot-service <span class="tag done">完成</span></h3><p>批次的狀態機、REST API、PostgreSQL、Flyway、六角架構與 ArchUnit、GitHub Actions CI。</p></div>
     <div class="tl-item done reveal d1"><h3>第 2 週 · equipment-service、模擬器、RabbitMQ <span class="tag done">完成</span></h3><p>機台服務、事件契約、冪等消費、死信佇列、機台模擬器、lot-service 訂閱事件、業務錯誤直接進死信佇列。</p></div>
-    <div class="tl-item now reveal d2"><h3>第 3 週 · alarm-service、api-gateway、JWT <span class="tag now">下一步</span></h3><p>機台 DOWN 時產生告警、恢復時關閉;對外只開一個閘道並加上登入驗證。</p></div>
+    <div class="tl-item now reveal d2"><h3>第 3 週 · alarm-service、api-gateway、JWT <span class="tag now">下一步</span></h3><p>機台 DOWN 時產生告警、恢復時關閉；對外只開一個閘道並加上登入驗證。</p></div>
     <div class="tl-item reveal"><h3>第 4 週 · Docker 與 CI <span class="tag">規劃中</span></h3><p>每個服務的 Dockerfile、整套 docker compose、CI 推映像檔到 GHCR。</p></div>
-    <div class="tl-item reveal d1"><h3>第 5 週 · Kubernetes <span class="tag">規劃中</span></h3><p>Deployment、探針(probes)、HPA 自動擴縮、Helm chart。</p></div>
-    <div class="tl-item reveal d2"><h3>第 6 週 · CD、監控、文件 <span class="tag">規劃中</span></h3><p>自動部署、Prometheus + Grafana 看板、README 與架構決策紀錄(ADR)收尾。</p></div>
+    <div class="tl-item reveal d1"><h3>第 5 週 · Kubernetes <span class="tag">規劃中</span></h3><p>Deployment、探針（probes）、HPA 自動擴縮、Helm chart。</p></div>
+    <div class="tl-item reveal d2"><h3>第 6 週 · CD、監控、文件 <span class="tag">規劃中</span></h3><p>自動部署、Prometheus + Grafana 看板、README 與架構決策紀錄（ADR）收尾。</p></div>
   </div>
 </div></section>
 
 <section class="block" id="about"><div class="wrap">
   <div class="author reveal">
-    <img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="128" height="137">
+    <img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="96" height="96">
     <div>
       <h2 class="sec-title">關於作者</h2>
-      <p><strong>Shawn Chen</strong> · 全端工程師,住在台灣。從業務轉職進入軟體開發,平常做 Web 系統的分析、設計與開發。</p>
-      <p>Fab Monitor 是我用來把後端微服務、訊息佇列、容器化與 CI/CD 一次練完整的作品;這個網站是我的學習筆記,也當成作品說明。</p>
-      <div class="btns"><a class="btn" href="https://github.com/aooal">GitHub · aooal ↗</a></div>
+      <p><strong>Shawn Chen</strong> · 全端工程師，專注於 Web 系統與後端服務。</p>
+      <p>我對製造業的事件驅動系統很感興趣，因此做了 Fab Monitor，把微服務、訊息佇列、容器化與 CI/CD 實際串成一個完整的專案。這個網站是專案的設計說明，也是我的學習筆記。</p>
+      <div class="btns"><a class="btn" href="https://github.com/aooal">GitHub ↗</a><a class="btn" id="mailBtn" href="#about" data-u="taboi40145" data-d="gmail.com">寄信給我 ✉</a></div>
     </div>
   </div>
 </div></section>
@@ -144,11 +144,11 @@
 <section class="block"><div class="wrap">
   <h2 class="sec-title reveal">用到的技術</h2>
   <p class="sec-sub reveal">標示「規劃」的尚未實作。</p>
-  <div class="chips reveal"><span class="chip">Java 21</span><span class="chip">Spring Boot 4</span><span class="chip">Spring AMQP</span><span class="chip">RabbitMQ</span><span class="chip">PostgreSQL 17</span><span class="chip">Flyway</span><span class="chip">JPA / Hibernate</span><span class="chip">Testcontainers</span><span class="chip">ArchUnit</span><span class="chip">JUnit</span><span class="chip">Maven</span><span class="chip">Docker Compose</span><span class="chip">GitHub Actions</span><span class="chip">Kubernetes(規劃)</span><span class="chip">Helm(規劃)</span><span class="chip">Prometheus / Grafana(規劃)</span></div>
+  <div class="chips reveal"><span class="chip">Java 21</span><span class="chip">Spring Boot 4</span><span class="chip">Spring AMQP</span><span class="chip">RabbitMQ</span><span class="chip">PostgreSQL 17</span><span class="chip">Flyway</span><span class="chip">JPA / Hibernate</span><span class="chip">Testcontainers</span><span class="chip">ArchUnit</span><span class="chip">JUnit</span><span class="chip">Maven</span><span class="chip">Docker Compose</span><span class="chip">GitHub Actions</span><span class="chip">Kubernetes（規劃）</span><span class="chip">Helm（規劃）</span><span class="chip">Prometheus / Grafana（規劃）</span></div>
 </div></section>
 
 <footer class="site-footer"><div class="wrap">
-  <p>Fab Monitor 是個人練習專案,以<strong>模擬資料</strong>示範批次與設備事件監控,與任何真實半導體廠或其內部系統無關。</p>
+  <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
   <p class="by"><img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="40" height="40">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
 </div></footer>
 <script src="assets/site.js"></script>

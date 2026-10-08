@@ -273,3 +273,11 @@ footer.site-footer { border-top: 1px solid var(--card-border); padding: 36px 0 5
   .hero-avatar { width: 220px; order: -1; justify-self: start; }
   .author { flex-direction: column; align-items: flex-start; }
 }
+
+/* tidy avatar sizes */
+@media (min-width: 901px) { .hero-grid { grid-template-columns: minmax(0, 1fr) auto; } }
+.hero-avatar { width: 168px; justify-self: end; margin-right: 24px; }
+.hero-avatar img { border-radius: 50%; aspect-ratio: 1 / 1; object-fit: cover; object-position: 50% 50%; border: 3px solid var(--card-border); }
+.hero-avatar .ring { border-radius: 50%; inset: -10px; }
+.author img { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; object-position: 50% 50%; }
+@media (max-width: 900px) { .hero-avatar { width: 112px; order: -1; justify-self: start; margin: 0 0 8px; } }
