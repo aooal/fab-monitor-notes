@@ -169,7 +169,7 @@
     var root = $("#sandbox"); if (!root) return;
     var STEPS = ["LITHO", "ETCH", "CVD", "CMP", "IMPLANT"], EQP = "EQP-ETCH-01";
     var Q_EQ = "equipment-service.machine-events", Q_LOT = "lot-service.machine-events";
-    var S, busy = false, started = Date.now();
+    var S, busy = false, started = Date.now(), SPEED = 1;
 
     root.innerHTML =
       '<div class="pg-grid">' +
@@ -225,7 +225,7 @@
         { transform: "translate(" + a.x + "px," + a.y + "px) translate(-50%,-50%) scale(1)", opacity: 1, offset: 0.15 },
         { transform: "translate(" + b.x + "px," + b.y + "px) translate(-50%,-50%) scale(1)", opacity: 1, offset: 0.85 },
         { transform: "translate(" + b.x + "px," + b.y + "px) translate(-50%,-50%) scale(.6)", opacity: 0 }
-      ], { duration: 620, easing: "ease-in-out", fill: "forwards" });
+      ], { duration: 1600 * SPEED, easing: "ease-in-out", fill: "forwards" });
       return anim.finished.then(function () { p.remove(); }, function () { p.remove(); });
     }
     function flash(id) { var n = $("#" + id, root); n.classList.remove("hit"); void n.offsetWidth; n.classList.add("hit"); }
@@ -295,16 +295,16 @@
         if (isEq) S.dlq.eq++; else S.dlq.lot++;
         flash("n-dlq"); render();
       }
+      await sleep(400 * SPEED);
     }
     async function send(ev) {
       S.last = ev;
       log("send", "模擬器發布 " + ev.type + (ev.lotNo ? " " + ev.lotNo : "") + " eventId=" + ev.eventId);
       await fly($("#n-sim", root), $("#n-mq", root), ev.type.replace("machine.", ""), ev.color);
       flash("n-mq");
-      var jobs = [];
-      if (ev.type !== "lot.created") jobs.push(deliver("eq", ev));
-      if (ev.type !== "machine.status") jobs.push(deliver("lot", ev));
-      await Promise.all(jobs);
+      await sleep(500 * SPEED);
+      if (ev.type !== "lot.created") { await deliver("eq", ev); await sleep(500 * SPEED); }
+      if (ev.type !== "machine.status") await deliver("lot", ev);
     }
     var COLORS = { "lot.created": "#8b7bff", "machine.track-in": "#38e1c0", "machine.track-out": "#ffb86b", "machine.status": "#7aa7ff" };
     function mkEv(type, extra) {
@@ -341,6 +341,13 @@
       });
       groups[g].appendChild(b);
     });
+    var sp = el("div", "pg-grp"); sp.appendChild(el("span", "gl", "動畫速度"));
+    [["慢", 1], ["中", 0.5], ["快", 0.2]].forEach(function (o) {
+      var b = el("button", "btn small", o[0]); b.type = "button"; b.setAttribute("aria-pressed", o[1] === SPEED ? "true" : "false");
+      b.addEventListener("click", function () { SPEED = o[1]; $$("button", sp).forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); }); });
+      sp.appendChild(b);
+    });
+    ctl.insertBefore(sp, ctl.firstChild);
     reset();
   })();
 })();
