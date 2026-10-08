@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fab Monitor 開發筆記</title>
-<meta name="description" content="Fab Monitor:模擬晶圓廠批次與設備事件的微服務練習專案,Spring Boot + RabbitMQ 開發筆記。">
+<meta name="description" content="Fab Monitor:模擬工廠機台與批次事件交換的微服務練習專案,Spring Boot + RabbitMQ 開發筆記。">
+<link rel="icon" href="assets/avatar-sm.jpg">
 <link rel="stylesheet" href="assets/style.css">
 <script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 </head>
@@ -21,12 +22,16 @@
 </div></header>
 
 <section class="hero"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
-<div class="wrap">
+<div class="wrap hero-grid">
+ <div>
   <div class="eyebrow reveal"><i></i>個人練習專案 · 開發筆記</div>
-  <h1 class="reveal d1">把一座<span class="grad">模擬晶圓廠</span><br>拆成會說話的微服務</h1>
-  <p class="lead reveal d2">Fab Monitor 用假資料模擬批次(Lot)與設備(Equipment)的事件流。這裡記錄我怎麼設計、為什麼這樣做、踩過哪些坑,也寫給之後回頭複習的自己。</p>
+  <h1 class="reveal d1">讓<span class="grad">機台資料</span>在<br>微服務之間流動</h1>
+  <p class="lead reveal d2">Fab Monitor 用假資料模擬工廠機台與批次(Lot)之間的事件交換,情境取材自晶圓廠:機台進站、出站、故障,服務之間用訊息佇列溝通。這裡記錄我怎麼設計、為什麼這樣做、踩過哪些坑,也寫給之後回頭複習的自己。</p>
   <div class="btns reveal d3"><a class="btn primary" href="#posts">開始閱讀 →</a><a class="btn" href="posts/01-overview.html">先看整體架構</a></div>
   <div class="notice reveal d3">這是模擬專案:所有資料與事件都由程式產生,不代表任何真實工廠或其內部系統的做法。</div>
+ </div>
+ <div class="hero-avatar reveal d2"><div class="ring"></div><img src="assets/avatar.jpg" alt="Shawn Chen 的卡通頭像:戴毛帽的藍色小人在寫程式" width="560" height="503"></div>
+</div>
 </div></section>
 
 <section class="block" id="stats"><div class="wrap">
@@ -124,6 +129,18 @@
   </div>
 </div></section>
 
+<section class="block" id="about"><div class="wrap">
+  <div class="author reveal">
+    <img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="128" height="137">
+    <div>
+      <h2 class="sec-title">關於作者</h2>
+      <p><strong>Shawn Chen</strong> · 全端工程師,住在台灣。從業務轉職進入軟體開發,平常做 Web 系統的分析、設計與開發。</p>
+      <p>Fab Monitor 是我用來把後端微服務、訊息佇列、容器化與 CI/CD 一次練完整的作品;這個網站是我的學習筆記,也當成作品說明。</p>
+      <div class="btns"><a class="btn" href="https://github.com/aooal">GitHub · aooal ↗</a></div>
+    </div>
+  </div>
+</div></section>
+
 <section class="block"><div class="wrap">
   <h2 class="sec-title reveal">用到的技術</h2>
   <p class="sec-sub reveal">標示「規劃」的尚未實作。</p>
@@ -132,7 +149,7 @@
 
 <footer class="site-footer"><div class="wrap">
   <p>Fab Monitor 是個人練習專案,以<strong>模擬資料</strong>示範批次與設備事件監控,與任何真實半導體廠或其內部系統無關。</p>
-  <p>用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 Shawn 整理 · 2026 年 10 月</p>
+  <p class="by"><img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="40" height="40">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
 </div></footer>
 <script src="assets/site.js"></script>
 </body></html>
