@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 2 週:用 RabbitMQ 把服務串起來 · Fab Monitor 開發筆記</title>
+<meta name="description" content="exchange、queue、binding、routing key、死信佇列各是什麼?事件契約怎麼訂?為什麼 queue 要由消費者宣告?">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 03 篇 / 共 08 篇</div>
+  <h1><span class="grad">第 2 週:用 RabbitMQ 把服務串起來</span></h1>
+  <div class="meta"><span>約 12 分鐘</span><span class="tag">RabbitMQ</span><span class="tag">事件驅動</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>第二週的主題是讓服務「開口說話」。機台狀態改變,lot-service 要知道;機台進站,批次要跟著更新。我選擇用 RabbitMQ 傳事件,而不是讓服務互相呼叫對方的 REST API。</p>
+
+<h2>為什麼用訊息,而不是直接呼叫 REST?</h2>
+<ul>
+<li><strong>解耦。</strong>發送者不需要知道有誰在聽。之後加 alarm-service,只要多訂閱,不用改 equipment-service。</li>
+<li><strong>容錯。</strong>lot-service 暫時關掉時,訊息會留在佇列裡,等它回來再處理。如果是 REST,呼叫當下對方沒開就失敗了。</li>
+<li><strong>削峰。</strong>機台事件一次湧進來,佇列先接住,消費者按自己的速度處理。</li>
+</ul>
+<p>代價是:流程變成非同步,除錯與一致性都比較難。這也是這個專案想練習的地方。選 RabbitMQ 的完整理由寫在 ADR 0001。</p>
+
+<h2>四個名詞一次搞懂</h2>
+<table>
+<thead><tr><th>名詞</th><th>角色</th><th>郵局比喻</th></tr></thead>
+<tbody>
+<tr><td><strong>Exchange</strong></td><td>收訊息、依規則分送,自己不存訊息</td><td>郵局分信櫃檯</td></tr>
+<tr><td><strong>Queue</strong></td><td>真正存放訊息的地方,消費者從這裡取</td><td>收件人的信箱</td></tr>
+<tr><td><strong>Binding</strong></td><td>exchange 與 queue 之間的規則</td><td>「這種信放這個信箱」</td></tr>
+<tr><td><strong>Routing key</strong></td><td>訊息上的標籤,配合 binding 決定去向</td><td>信封上的類別</td></tr>
+</tbody></table>
+<p>發布者只對 exchange 說話(<code>fab.events</code>,topic 型),帶上 routing key(例如 <code>machine.track-in</code>)。每個服務自己準備一個 queue,並綁上它關心的 routing key,就只會收到想要的事件。</p>
+
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>如果你用過 MassTransit 或 Azure Service Bus:exchange + routing key 接近 Service Bus 的 topic,每個服務自己的 queue 接近 subscription。<code>@RabbitListener</code> 大致就是一個 consumer / message handler。</p></div>
+
+<h2>事件契約:先寫文件,再寫程式</h2>
+<p>多個服務共用的事件格式,我寫在 <code>docs/event-contract.md</code>,雙方都以它為準。每則事件都有相同的外層信封:</p>
+<pre><code>{
+  <span class="s">"eventId"</span>: <span class="s">"8f1c...-uuid"</span>,
+  <span class="s">"type"</span>: <span class="s">"machine.track-in"</span>,
+  <span class="s">"schemaVersion"</span>: 1,
+  <span class="s">"occurredAt"</span>: <span class="s">"2026-10-08T15:31:09Z"</span>,
+  <span class="s">"equipmentId"</span>: <span class="s">"EQP-ETCH-01"</span>,
+  <span class="s">"lotNo"</span>: <span class="s">"LOT-10081531-0001"</span>,
+  <span class="s">"step"</span>: <span class="s">"ETCH"</span>
+}</code></pre>
+<p><code>eventId</code> 讓消費者能辨識「這則我處理過了」(下一篇的重點);<code>schemaVersion</code> 讓格式日後可以演進。</p>
+<table>
+<thead><tr><th>事件</th><th>內容</th><th>誰發 → 誰收</th></tr></thead>
+<tbody>
+<tr><td><code>lot.created</code></td><td>lotNo、productCode、quantity</td><td>模擬器 → lot-service</td></tr>
+<tr><td><code>machine.track-in</code></td><td>equipmentId、lotNo、step</td><td>模擬器 → equipment-service、lot-service</td></tr>
+<tr><td><code>machine.track-out</code></td><td>equipmentId、lotNo、nextStep(沒有下一站則為 null)</td><td>模擬器 → equipment-service、lot-service</td></tr>
+<tr><td><code>machine.status</code></td><td>equipmentId、status、reason</td><td>模擬器 → equipment-service</td></tr>
+<tr><td><code>equipment.status-changed</code></td><td>equipmentId、from、to、reason</td><td>equipment-service → alarm-service(第 3 週)</td></tr>
+</tbody></table>
+
+<h2>Queue 由「消費者」宣告</h2>
+<p>每個服務啟動時,自己宣告它需要的 queue 與 binding(Spring AMQP 的 <code>Declarables</code> bean)。好處是服務自給自足,不依賴手動設定。</p>
+<div class="callout warn"><b class="t">這帶來一個陷阱</b><p>如果訊息發出的當下,<strong>沒有任何 queue 綁定</strong>這個 routing key,訊息會直接消失,不報錯。所以啟動順序要是:RabbitMQ → lot-service → 模擬器。我就踩到過:模擬器先跑,<code>lot.created</code> 全部蒸發,後面的 track-in 因為找不到批次而失敗。細節在踩坑紀錄。</p></div>
+
+<h2>死信佇列(DLQ)</h2>
+<p>處理不了的訊息不能無限重試,也不能默默丟掉。做法是:拒收時<strong>不放回原佇列</strong>,改由 RabbitMQ 轉送到死信交換器 <code>fab.events.dlx</code>,再以 <code>&lt;queue&gt;.dlq</code> 為 routing key 落進對應的死信佇列。人可以進 RabbitMQ 管理介面查看、分析、必要時重送。</p>
+<pre><code><span class="c">// 宣告 queue 時指定死信去向</span>
+<span class="n">QueueBuilder</span>.durable(MACHINE_EVENTS_QUEUE)
+    .deadLetterExchange(DEAD_LETTER_EXCHANGE)
+    .deadLetterRoutingKey(MACHINE_EVENTS_DLQ)
+    .build();</code></pre>
+
+<h2>順序保證有限</h2>
+<p>同一個 queue、單一消費者時,訊息按發布順序處理。但只要把消費者擴成多個,或失敗的訊息被重試而後面的先過,順序就會亂。所以處理程式必須能承受「晚到」或「重複」的事件:遇到不合理的狀態,就丟進死信佇列,而不是硬改資料。契約文件有一節專門寫這個限制。</p>
+
+<h2>這一週學到的</h2>
+<ul>
+<li>訊息系統的難點不在「怎麼送」,而在「送壞了、送兩次、順序亂了怎麼辦」。</li>
+<li>事件格式是服務之間的合約,應該像 API 一樣被文件化與版本化。</li>
+<li>RabbitMQ 管理介面(15672)是學習最好的工具,可以直接看到 exchange、queue、訊息怎麼流動。</li>
+</ul>
+
+<div class="post-nav"><a class="prev" href="02-hexagonal.html"><small>← 上一篇</small>第 1 週:用六角架構寫出第一個服務 lot-service</a><a class="next" href="04-idempotency.html"><small>下一篇 →</small>訊息會重複送達:冪等消費與交易</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案,以<strong>模擬資料</strong>示範批次與設備事件監控,與任何真實半導體廠或其內部系統無關。</p>
+  <p>用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 Shawn 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+</body></html>

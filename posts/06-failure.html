@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>失敗處理:業務錯誤不重試,技術錯誤才重試 · Fab Monitor 開發筆記</title>
+<meta name="description" content="把失敗分成兩種,各走各的路;再把兩大段 stack trace 縮成一行 log。附真實踩坑過程。">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 06 篇 / 共 08 篇</div>
+  <h1><span class="grad">失敗處理:業務錯誤不重試,技術錯誤才重試</span></h1>
+  <div class="meta"><span>約 9 分鐘</span><span class="tag">錯誤處理</span><span class="tag">死信佇列</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>原本的失敗處理很單純:任何例外都重試 3 次(間隔 1 秒、2 秒),還是失敗就進死信佇列。聽起來合理,直到我看到真實的 log。</p>
+
+<h2>問題:重試對有些錯誤毫無意義</h2>
+<p>舉例,機台送來「EQP-ETCH-02 出站 LOT-0004」,但 ETCH-02 手上根本不是這一批。這個錯誤重試十次還是一樣的結果,因為資料不會自己變對。結果是:</p>
+<ul>
+<li>白白等了 3 秒(1 秒 + 2 秒)才進死信佇列。</li>
+<li>每次失敗印出<strong>兩大段 stack trace</strong>(一段來自重試用盡,一段來自容器的錯誤處理器),真正的原因淹沒在幾百行裡。</li>
+</ul>
+
+<h2>把失敗分成兩種</h2>
+<table>
+<thead><tr><th></th><th>業務錯誤</th><th>技術錯誤</th></tr></thead>
+<tbody>
+<tr><td>例子</td><td>找不到 lot / 機台、機台不是在處理這批 lot、lot 在 ON_HOLD、欄位缺漏、JSON 壞掉、未知 routing key</td><td>資料庫暫時連不上、同時更新衝突、網路逾時</td></tr>
+<tr><td>重試有用嗎?</td><td>沒用,輸入就是錯的</td><td>有用,下一次可能就好了</td></tr>
+<tr><td>處理方式</td><td>立刻進死信佇列</td><td>重試 3 次(1s、2s),仍失敗才進死信佇列</td></tr>
+</tbody></table>
+
+<h2>實作:三個小類別</h2>
+<p><strong>1. 分類規則</strong> <code>ListenerFailurePolicy</code>:一個純 Java 方法,沿著例外的 cause 鏈檢查(因為框架會把真正的例外包好幾層)。只要鏈上有「業務錯誤」就回傳不可重試:</p>
+<pre><code><span class="k">private static final</span> <span class="n">List</span>&lt;<span class="n">Class</span>&lt;? <span class="k">extends</span> <span class="n">Throwable</span>&gt;&gt; NOT_RETRYABLE = <span class="n">List</span>.of(
+        <span class="n">LotNotFoundException</span>.<span class="k">class</span>,
+        <span class="n">DuplicateLotNoException</span>.<span class="k">class</span>,
+        <span class="n">InvalidLotOperationException</span>.<span class="k">class</span>,
+        <span class="n">IllegalArgumentException</span>.<span class="k">class</span>,
+        <span class="n">JacksonException</span>.<span class="k">class</span>,              <span class="c">// JSON 解析失敗</span>
+        <span class="n">AmqpRejectAndDontRequeueException</span>.<span class="k">class</span>);</code></pre>
+<p><strong>2. 一行 log 的收尾者</strong> <code>DeadLetterRecoverer</code>:在「不再重試」時被呼叫,印一行摘要,然後拒收訊息(不放回原佇列),交給死信佇列:</p>
+<pre><code>Dead-lettered machine.track-out from equipment-service.machine-events
+  (not retryable): InvalidEquipmentOperationException: Equipment EQP-ETCH-02 is not processing lot LOT-0004</code></pre>
+<p><strong>3. 接線</strong> <code>ListenerRetryConfig</code>:Spring Boot 本來就會依設定檔建立重試機制,我只用兩個 bean 把「判斷要不要重試」和「最後怎麼收尾」換成自己的:</p>
+<pre><code><span class="n">@Bean</span>
+<span class="n">RabbitListenerRetrySettingsCustomizer</span> retryOnlyTechnicalErrors() {
+    <span class="k">return</span> settings -&gt; settings.setExceptionPredicate(<span class="n">ListenerFailurePolicy</span>::isRetryable);
+}
+
+<span class="n">@Bean</span>
+<span class="n">MessageRecoverer</span> deadLetterRecoverer() { <span class="k">return new</span> <span class="n">DeadLetterRecoverer</span>(); }</code></pre>
+<p>最後,第二段 stack trace 來自框架的 <code>ConditionalRejectingErrorHandler</code>,我在 <code>application.yaml</code> 把它的 log 等級調到 ERROR,避免同一個失敗被印兩次。</p>
+
+<div class="callout tip"><b class="t">這次我是怎麼確認 API 的?</b><p>Spring Boot 4 / Spring Framework 7 的重試機制換了一套新 API(舊的 spring-retry 已被取代)。網路上大部分範例都是舊的,我沒有憑記憶亂寫,而是直接檢查專案打包出來的 jar,確認 <code>RetryPolicySettings</code> 真的有 <code>setExceptionPredicate</code> 才動手。遇到版本很新的函式庫,這招很有用。</p></div>
+
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>這就是 Polly 的概念:<code>Handle&lt;TransientException&gt;()</code> 只重試暫時性錯誤,其他直接放棄。死信佇列則相當於 Azure Service Bus 的 dead-letter sub-queue。</p></div>
+
+<h2>測試</h2>
+<p>兩個服務各加了 6 個單元測試,涵蓋:被包起來的業務例外仍判定為不重試、缺欄位、真實的 JSON 解析錯誤、技術錯誤會重試、log 取最內層原因、收尾者丟出的例外沒有 cause 且不含換行。重試判斷是純函式,所以完全不需要開 RabbitMQ 就能測。</p>
+
+<h2>如何手動驗證</h2>
+<ol>
+<li>啟動 RabbitMQ 與兩個服務。</li>
+<li>在管理介面對 <code>fab.events</code> 發一則 <code>machine.track-out</code>,lotNo 填不存在的值、eventId 用新的 UUID。</li>
+<li>預期:立刻進 <code>.dlq</code>(沒有 1 秒、2 秒的等待),終端機只有一行 <code>Dead-lettered ...</code>。</li>
+</ol>
+
+<h2>這一次學到的</h2>
+<ul>
+<li>重試是為了「暫時性」問題;對「確定性」錯誤重試只是拖延。</li>
+<li>log 是給人讀的:一行摘要加原因,比一百行 stack trace 有用。詳細資訊仍可在死信佇列裡看到原始訊息。</li>
+<li>分類規則放在一個地方、寫成純函式,就能被完整測試。</li>
+</ul>
+
+<div class="post-nav"><a class="prev" href="05-simulator.html"><small>← 上一篇</small>機台模擬器:沒有真機台,就自己造事件</a><a class="next" href="07-pitfalls.html"><small>下一篇 →</small>踩坑紀錄:每個坑怎麼發現、怎麼修</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案,以<strong>模擬資料</strong>示範批次與設備事件監控,與任何真實半導體廠或其內部系統無關。</p>
+  <p>用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 Shawn 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+</body></html>

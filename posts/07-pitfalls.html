@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>踩坑紀錄:每個坑怎麼發現、怎麼修 · Fab Monitor 開發筆記</title>
+<meta name="description" content="兩個模擬器同時跑、queue 沒綁定導致訊息消失、CI 的資料庫、重複的 import……這些都是真的發生過的。">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 07 篇 / 共 08 篇</div>
+  <h1><span class="grad">踩坑紀錄:每個坑怎麼發現、怎麼修</span></h1>
+  <div class="meta"><span>約 7 分鐘</span><span class="tag">除錯</span><span class="tag">經驗</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>做專案最有價值的常常不是順利的部分。這篇把實際遇到的問題整理成表,每一個都寫「症狀 → 原因 → 修法 → 學到什麼」,方便日後遇到類似狀況時回頭查。</p>
+
+<h2>一覽表</h2>
+<table>
+<thead><tr><th>#</th><th>症狀</th><th>真正的原因</th><th>修法</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>機台卡在 DOWN,手上還握著一批 Lot,無法設回 IDLE(回 409)</td><td>同時開了兩個模擬器(舊版用不同的批號),互相干擾</td><td>全部停掉 → 手動出站 → 設 IDLE → 清空死信佇列 → 只開一個</td></tr>
+<tr><td>2</td><td>手動補發的出站訊息沒有效果</td><td>重複使用舊的 eventId,被冪等機制當成重複略過</td><td>每次手動送訊息都換新的 UUID</td></tr>
+<tr><td>3</td><td>lot-service 的死信佇列根本不存在</td><td>lot-service 沒用新版本重啟,queue 從未被宣告</td><td>重啟服務;並記下啟動順序</td></tr>
+<tr><td>4</td><td><code>lot.created</code> 發了但批次沒建立</td><td>當時沒有任何 queue 綁定該 routing key,訊息被丟棄且不報錯</td><td>固定啟動順序:RabbitMQ → 服務 → 模擬器</td></tr>
+<tr><td>5</td><td>我一度建議「找不到 lot 就自動建立」</td><td>建立 Lot 需要產品代號與數量,track-in 事件沒有</td><td>撤回建議,改設計 <code>lot.created</code> 事件</td></tr>
+<tr><td>6</td><td>呼叫 <code>GET /api/lots</code> 找不到</td><td>那個端點當時還沒寫(我太早叫自己測)</td><td>先用 <code>by-lot-no</code> 查,隨後補上列表 API</td></tr>
+<tr><td>7</td><td>模擬器每次重啟都要手動重設機台</td><td>模擬器的記憶和 equipment-service 的真實狀態不一致</td><td>加上「啟動時對齊」</td></tr>
+<tr><td>8</td><td>測試編譯錯誤:重複的 import</td><td>用 sed 批次修改時多加了一次 <code>import java.util.HashMap</code></td><td>手動移除;批次修改後務必檢查結果</td></tr>
+<tr><td>9</td><td>啟動報錯:Spring 不知道該用哪個建構子</td><td>類別有多個建構子,Spring 無法選擇</td><td>只保留一個建構子</td></tr>
+<tr><td>10</td><td>CI 設定了 PostgreSQL 服務卻不需要</td><td>整合測試已改用 Testcontainers,自己起容器</td><td>移除 workflow 裡的資料庫服務並加註解</td></tr>
+<tr><td>11</td><td>推上 GitHub 被拒:需要 <code>workflow</code> 權限</td><td>推送的 commit 含有 <code>.github/workflows</code>,Token 缺少對應範圍</td><td>補上 workflow scope(或改用登入授權)</td></tr>
+<tr><td>12</td><td>每個失敗訊息印出兩大段 stack trace、白等 3 秒</td><td>所有例外一律重試,且兩個框架元件各印一次</td><td>見前一篇:區分業務/技術錯誤、單行 log</td></tr>
+</tbody></table>
+
+<h2>三個我最想記住的</h2>
+
+<h3>1. 「狀態有兩份」就會出問題(#1、#7)</h3>
+<p>模擬器存一份機台狀態,equipment-service 也存一份。它們一不同步,系統就進入怪狀態,還得手動修。教訓是:<strong>要嘛只有一份真相,要嘛有明確的同步方式</strong>。這個坑後來變成「啟動時對齊」的功能。
+
+</p>
+
+<h3>2. 靜默失敗最難查(#4)</h3>
+<p>訊息因為沒有 queue 綁定而消失,系統完全不報錯。RabbitMQ 有「mandatory」旗標與 publisher return 機制可以偵測這種情況,但我目前接受這個限制並寫在文件裡。之後若要補強,可以讓發布端在無路由時記錄警告。</p>
+
+<h3>3. 錯誤要能被重現、被看見(#12)</h3>
+<p>模擬器的故意壞訊息,讓我有穩定的素材去觀察失敗路徑。而 log 一旦太長,等於沒有 log。能被快速讀懂,才算可觀測。</p>
+
+<div class="callout warn"><b class="t">給未來的自己</b><p>遇到「系統狀態怪怪的」,先確認有沒有多個副本同時在跑(#1)、服務是不是用新版本重啟了(#3),再往深處查。九成的問題在這兩步就解決了。</p></div>
+
+<div class="post-nav"><a class="prev" href="06-failure.html"><small>← 上一篇</small>失敗處理:業務錯誤不重試,技術錯誤才重試</a><a class="next" href="08-industry.html"><small>下一篇 →</small>業界怎麼做?SECS/GEM、MQTT、Kafka 與雲端服務對照</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案,以<strong>模擬資料</strong>示範批次與設備事件監控,與任何真實半導體廠或其內部系統無關。</p>
+  <p>用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 Shawn 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+</body></html>

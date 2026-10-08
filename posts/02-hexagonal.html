@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 1 週:用六角架構寫出第一個服務 lot-service · Fab Monitor 開發筆記</title>
+<meta name="description" content="從 C#/.NET 的視角看 Spring Boot:領域、應用、Web、基礎設施四層,以及用 ArchUnit 把分層規則寫成會失敗的測試。">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 02 篇 / 共 08 篇</div>
+  <h1><span class="grad">第 1 週:用六角架構寫出第一個服務 lot-service</span></h1>
+  <div class="meta"><span>約 12 分鐘</span><span class="tag">Spring Boot</span><span class="tag">六角架構</span><span class="tag">C# 對照</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>第一週只做一件事:把 <code>lot-service</code> 做好。它管理 Lot 的生命週期,對外提供 REST API,資料放在 PostgreSQL。重點不是功能多,而是<strong>把分層做對</strong>,後面的服務才能照同一套方式長。</p>
+
+<h2>Lot 的狀態機</h2>
+<p>一批 Lot 有四種狀態,轉換有規則,不是想改就改:</p>
+<table>
+<thead><tr><th>狀態</th><th>意義</th><th>可以去哪</th></tr></thead>
+<tbody>
+<tr><td><code>CREATED</code></td><td>剛建立,尚未進站</td><td>進站 → IN_PROCESS</td></tr>
+<tr><td><code>IN_PROCESS</code></td><td>加工中</td><td>換站、暫停(ON_HOLD,必須填原因)、完成(COMPLETED)</td></tr>
+<tr><td><code>ON_HOLD</code></td><td>被擋住,不可加工</td><td>釋放後回到加工中</td></tr>
+<tr><td><code>COMPLETED</code></td><td>已完成</td><td>終點</td></tr>
+</tbody></table>
+<p>這些規則寫在領域物件 <code>Lot</code> 裡面。非法的轉換(例如已完成的批次又進站)會丟出 <code>InvalidLotOperationException</code>。<strong>規則放在物件自己身上</strong>,而不是散在 Controller 或 Service 的 if/else 裡。</p>
+
+<h2>四層結構</h2>
+<p>我用「套件」來分層(同一個 Maven 模組,靠規則守住邊界):</p>
+<pre><code><span class="c">com.shawn.fabmonitor.lotservice</span>
+├── domain          <span class="c">Lot、LotNo、狀態機、Repository 介面(port)</span>
+├── application     <span class="c">LotService:組合領域物件完成一個用例、管交易</span>
+├── web             <span class="c">LotController、DTO、例外轉 HTTP 狀態碼</span>
+├── messaging       <span class="c">RabbitMQ 監聽(第 2 週加入)</span>
+└── infrastructure
+    └── persistence <span class="c">JPA Entity、Repository 實作(adapter)</span></code></pre>
+<p>依賴方向只有一個:<strong>外層認識內層,內層不認識外層</strong>。domain 最乾淨,甚至不知道 Spring 與資料庫存在。</p>
+
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b>
+<p>把它想成 Clean Architecture / Onion Architecture:</p>
+<ul>
+<li><code>domain</code> ≈ 純 C# 的 Domain 專案(實體、值物件、<code>ILotRepository</code> 介面)</li>
+<li><code>application</code> ≈ Application 專案(service / use case,<code>@Transactional</code> 像 <code>TransactionScope</code>)</li>
+<li><code>web</code> ≈ Controller 與 DTO(<code>@RestController</code> ≈ <code>[ApiController]</code>)</li>
+<li><code>infrastructure.persistence</code> ≈ EF Core 的 DbContext 與 Repository 實作</li>
+</ul>
+<p>差別只在於:Java 這邊我把四層放在同一個專案、用套件分,靠測試守界線;在 .NET 通常拆成多個 csproj,由專案參照在編譯期擋住。</p></div>
+
+<h2>Repository:介面在 domain,實作在 infrastructure</h2>
+<p>這是六角架構(Ports and Adapters)的核心。領域層只定義「我需要什麼」(port),基礎設施層負責「怎麼做」(adapter):</p>
+<pre><code><span class="c">// domain:只說需要什麼</span>
+<span class="k">public interface</span> <span class="n">LotRepository</span> {
+    <span class="n">Optional</span>&lt;<span class="n">Lot</span>&gt; findByLotNo(<span class="n">LotNo</span> lotNo);
+    <span class="n">Lot</span> save(<span class="n">Lot</span> lot);
+    <span class="n">List</span>&lt;<span class="n">Lot</span>&gt; findRecent(<span class="n">LotStatus</span> status, <span class="k">int</span> limit);
+}</code></pre>
+<p>實作 <code>LotRepositoryAdapter</code> 在 infrastructure,內部用 Spring Data JPA。好處是:測試時我可以用一個記憶體版的假實作,完全不需要資料庫,就能測領域與應用邏輯。</p>
+
+<h2>用 ArchUnit 把規則寫成測試</h2>
+<p>「領域層不能依賴 Spring」這種規則,靠口頭約定很快會被破壞。ArchUnit 可以把它寫成單元測試,違反就紅燈:</p>
+<pre><code><span class="n">noClasses</span>().that().resideInAPackage(<span class="s">"..domain.."</span>)
+    .should().dependOnClassesThat().resideInAnyPackage(<span class="s">"org.springframework.."</span>, <span class="s">"jakarta.persistence.."</span>)</code></pre>
+<p>目前有六條規則,包括:domain 不依賴框架;application 不依賴 web / infrastructure / messaging;messaging 不依賴 web 與 infrastructure;web 不可以直接碰 persistence。</p>
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>ArchUnit 就是 Java 版的 NetArchTest。如果你習慣用專案參照擋分層,ArchUnit 是在「同一個專案裡」做到一樣的事。</p></div>
+
+<h2>資料庫:Flyway 與 optimistic locking</h2>
+<ul>
+<li><strong>表結構交給 Flyway。</strong>SQL 放在 <code>db/migration/V1__...sql</code>,啟動時自動套用;Hibernate 設成 <code>ddl-auto: validate</code>,只負責檢查而不改表。對應 EF Core 的 Migrations,但寫的是原生 SQL。</li>
+<li><strong>樂觀鎖。</strong>Lot 有 <code>version</code> 欄位,兩個請求同時改同一批,後到的會失敗(<code>LotConcurrentModificationException</code>),而不是默默覆蓋。對應 EF Core 的 concurrency token / rowversion。</li>
+</ul>
+
+<h2>測試:不用 mock 資料庫</h2>
+<p>整合測試用 <strong>Testcontainers</strong>:測試啟動時自己拉起一個真的 PostgreSQL 容器,跑完就丟掉。這樣測到的是真實的 SQL 與 Flyway,而不是假的。也因為這樣,CI 上不需要另外設定資料庫服務。</p>
+
+<h2>API 與文件</h2>
+<p>Controller 提供建立、查詢、進站(track-in)、換站(move)、暫停(hold)、釋放(release)、完成(complete)等端點,並用 SpringDoc 自動產生 Swagger 頁面,不用另外維護文件。錯誤由 <code>ApiExceptionHandler</code> 統一轉成適當的 HTTP 狀態碼(找不到 → 404、非法狀態轉換 → 409、參數錯誤 → 400)。</p>
+
+<h2>這一週學到的</h2>
+<ul>
+<li>分層不是為了好看,而是讓「可以替換的東西」(資料庫、框架)和「不能亂的東西」(業務規則)分開。</li>
+<li>規則一定要有測試守著,不然過兩週就會有人(包括我自己)偷懶跨層呼叫。</li>
+<li>Spring Boot 的「慣例優於設定」跟 ASP.NET Core 很像,多數事情加個 starter 依賴就好了。</li>
+</ul>
+
+<div class="post-nav"><a class="prev" href="01-overview.html"><small>← 上一篇</small>為什麼做 Fab Monitor?整體架構一次看懂</a><a class="next" href="03-rabbitmq.html"><small>下一篇 →</small>第 2 週:用 RabbitMQ 把服務串起來</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案,以<strong>模擬資料</strong>示範批次與設備事件監控,與任何真實半導體廠或其內部系統無關。</p>
+  <p>用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 Shawn 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+</body></html>

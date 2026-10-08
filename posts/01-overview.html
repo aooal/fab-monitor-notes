@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>為什麼做 Fab Monitor?整體架構一次看懂 · Fab Monitor 開發筆記</title>
+<meta name="description" content="一個模擬晶圓廠批次與設備事件的微服務練習專案:四個服務、一條事件匯流排,以及我為什麼這樣切。">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 01 篇 / 共 08 篇</div>
+  <h1><span class="grad">為什麼做 Fab Monitor?整體架構一次看懂</span></h1>
+  <div class="meta"><span>約 8 分鐘</span><span class="tag">架構</span><span class="tag">微服務</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>半導體製造是我很有興趣、但完全沒有實務經驗的領域。所以我決定用「模擬」的方式,自己做一個小型的批次與設備監控平台,把微服務、訊息佇列、容器化與 CI/CD 一次練完整。</p>
+
+<div class="callout warn"><b class="t">先說清楚</b><p>這是<strong>模擬專案</strong>。所有批次、機台與事件都由程式產生,流程是我依公開概念簡化出來的,不代表任何真實工廠或其內部系統的做法。</p></div>
+
+<h2>要解決的情境</h2>
+<p>晶圓在工廠裡是一批一批(Lot)流動的。每一批要經過許多站點(Step),每一站由一台機台(Equipment)處理:機台「進站」(track-in)開始加工,「出站」(track-out)送往下一站。機台也可能閒置、運轉,或故障(DOWN)。</p>
+<p>如果要做一個監控平台,就會需要回答這幾件事:</p>
+<ul>
+<li>這批 Lot 現在在哪一站?是在加工中、被擋住(ON_HOLD)還是已完成?</li>
+<li>這台機台現在是閒置、運轉還是故障?手上是哪一批?</li>
+<li>機台故障了,誰來通知?</li>
+</ul>
+
+<h2>架構:四個服務,一條事件匯流排</h2>
+
+<div class="diagram reveal">
+<svg viewBox="0 0 960 430" role="img" aria-label="事件流架構圖:模擬器發布事件到 fab.events,equipment-service 與 lot-service 各自訂閱,失敗的訊息進入死信佇列">
+<defs>
+  <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#38e1c0"/></marker>
+  <marker id="arrg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8a94b5"/></marker>
+  <marker id="arrr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#ff6b8b"/></marker>
+</defs>
+<path id="p1" class="flow live" d="M170 222 L225 222" marker-end="url(#arr)"/>
+<path id="p2" class="flow live" d="M375 222 C500 222 500 82 620 82" marker-end="url(#arr)"/>
+<path id="p3" class="flow live" d="M375 222 L620 222" marker-end="url(#arr)"/>
+<path id="p4" class="flow" d="M375 222 C500 222 500 362 620 362" marker-end="url(#arrg)"/>
+<path id="p5" class="flow live" d="M715 50 C715 6 300 6 300 190" marker-end="url(#arr)"/>
+<path id="p6" class="flow dlx" d="M715 254 L715 292 L320 292 L320 340" marker-end="url(#arrr)"/>
+
+<g class="node svc"><rect x="20" y="190" width="150" height="64" rx="14"/><text x="95" y="219" text-anchor="middle">equipment-</text><text x="95" y="238" text-anchor="middle">simulator</text></g>
+<g class="node mq"><rect x="225" y="190" width="150" height="64" rx="14"/><text x="300" y="219" text-anchor="middle">fab.events</text><text class="small" x="300" y="238" text-anchor="middle">topic exchange</text></g>
+<g class="node svc"><rect x="620" y="50" width="190" height="64" rx="14"/><text x="715" y="79" text-anchor="middle">equipment-service</text><text class="small" x="715" y="98" text-anchor="middle">機台狀態 · PostgreSQL</text></g>
+<g class="node svc"><rect x="620" y="190" width="190" height="64" rx="14"/><text x="715" y="219" text-anchor="middle">lot-service</text><text class="small" x="715" y="238" text-anchor="middle">批次 Lot · PostgreSQL</text></g>
+<g class="node planned"><rect x="620" y="330" width="190" height="64" rx="14"/><text x="715" y="359" text-anchor="middle">alarm-service</text><text class="small" x="715" y="378" text-anchor="middle">第 3 週 · 規劃中</text></g>
+<g class="node dead"><rect x="180" y="340" width="280" height="64" rx="14"/><text x="320" y="369" text-anchor="middle">fab.events.dlx → *.dlq</text><text class="small" x="320" y="388" text-anchor="middle">死信佇列:留給人檢查的失敗訊息</text></g>
+
+<text class="small" x="176" y="212">發布</text>
+<text class="small" x="448" y="140" transform="rotate(-38 448 140)">machine.*</text>
+<text class="small" x="440" y="214">lot.created · machine.*</text>
+<text class="small" x="452" y="318" transform="rotate(34 452 318)">equipment.status-changed</text>
+<text class="small" x="400" y="26">equipment.status-changed</text>
+<text class="small" x="480" y="284">處理失敗</text>
+
+<circle r="4.5" fill="#38e1c0"><animateMotion dur="1.6s" repeatCount="indefinite"><mpath href="#p1"/></animateMotion></circle>
+<circle r="4.5" fill="#38e1c0"><animateMotion dur="2.4s" begin="0.4s" repeatCount="indefinite"><mpath href="#p2"/></animateMotion></circle>
+<circle r="4.5" fill="#8b7bff"><animateMotion dur="2.4s" begin="1.0s" repeatCount="indefinite"><mpath href="#p3"/></animateMotion></circle>
+<circle r="4.5" fill="#ffb86b"><animateMotion dur="3.2s" begin="0.8s" repeatCount="indefinite"><mpath href="#p5"/></animateMotion></circle>
+</svg>
+<div class="legend"><span><i style="background:#38e1c0"></i>已完成的事件流</span><span><i style="background:#8a94b5"></i>規劃中(第 3 週)</span><span><i style="background:#ff6b8b"></i>失敗路徑</span></div>
+</div>
+
+
+<table>
+<thead><tr><th>服務</th><th>負責什麼</th><th>狀態</th></tr></thead>
+<tbody>
+<tr><td><code>lot-service</code></td><td>Lot 的建立、狀態機(CREATED → IN_PROCESS → ON_HOLD / COMPLETED)、REST 查詢;訂閱事件更新批次</td><td>完成</td></tr>
+<tr><td><code>equipment-service</code></td><td>機台註冊與狀態(IDLE / RUN / DOWN);訂閱機台事件;狀態改變時發布 <code>equipment.status-changed</code></td><td>完成</td></tr>
+<tr><td><code>equipment-simulator</code></td><td>假裝是機台,定時送出進站、出站、狀態事件,偶爾故意送壞訊息</td><td>完成</td></tr>
+<tr><td><code>alarm-service</code></td><td>機台 DOWN 時產生告警,恢復時關閉</td><td>第 3 週</td></tr>
+</tbody></table>
+
+<h2>為什麼要拆成多個服務?</h2>
+<p>老實說,這個規模用一個應用程式就能做完。拆開是為了練習那些「拆開之後才會遇到」的問題:服務之間怎麼溝通、訊息重複怎麼辦、其中一個服務壞了會怎樣、怎麼各自部署與擴縮。這些是實務上真正花時間的地方。</p>
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>每個服務就像一個獨立的 ASP.NET Core 專案,各有自己的資料庫。服務之間不共用資料表,只透過 REST 或訊息溝通。這跟你把一個大 solution 拆成多個可獨立部署的 Web API 是同一件事。</p></div>
+
+<h2>幾個一開始就定下來的原則</h2>
+<ul>
+<li><strong>每個服務自己的資料庫。</strong>lot-service 用 5432,equipment-service 用 5433。</li>
+<li><strong>服務之間用事件溝通。</strong>事件的格式寫成文件(事件契約),不是口頭約定。</li>
+<li><strong>分層要守規則。</strong>領域層不能認識框架,應用層不能認識 Web;而且用測試擋住,不靠自律。</li>
+<li><strong>先做小、每週交付。</strong>每週都有一個可以啟動、可以測試、可以展示的成果。</li>
+<li><strong>重要決策寫成 ADR。</strong>例如「為什麼用 RabbitMQ」,日後才知道當時怎麼想。</li>
+</ul>
+
+<h2>技術選擇</h2>
+<table>
+<thead><tr><th>主題</th><th>選擇</th><th>.NET 世界的對應</th></tr></thead>
+<tbody>
+<tr><td>語言 / 框架</td><td>Java 21 · Spring Boot</td><td>C# · ASP.NET Core</td></tr>
+<tr><td>建置</td><td>Maven + mvnw</td><td>MSBuild + NuGet</td></tr>
+<tr><td>資料存取</td><td>JPA / Hibernate</td><td>EF Core</td></tr>
+<tr><td>資料庫版本管理</td><td>Flyway</td><td>EF Core Migrations</td></tr>
+<tr><td>訊息</td><td>RabbitMQ · Spring AMQP</td><td>RabbitMQ.Client / MassTransit</td></tr>
+<tr><td>整合測試</td><td>Testcontainers</td><td>Testcontainers for .NET</td></tr>
+<tr><td>架構規則測試</td><td>ArchUnit</td><td>NetArchTest</td></tr>
+<tr><td>設定檔</td><td>application.yaml</td><td>appsettings.json</td></tr>
+</tbody></table>
+<p>接下來的文章會從第 1 週開始,依序寫下每一塊是怎麼做的。</p>
+
+<div class="post-nav"><span></span><a class="next" href="02-hexagonal.html"><small>下一篇 →</small>第 1 週:用六角架構寫出第一個服務 lot-service</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案,以<strong>模擬資料</strong>示範批次與設備事件監控,與任何真實半導體廠或其內部系統無關。</p>
+  <p>用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 Shawn 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+</body></html>
