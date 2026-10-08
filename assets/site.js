@@ -89,9 +89,47 @@
     pre.appendChild(b);
   });
 
-  // ----- mail button (address assembled here so it is not plain text in the page) -----
+  // ----- mail button: reveal + copy the address (many PCs have no default mail app, so mailto alone can do nothing) -----
   var mb = document.getElementById("mailBtn");
-  if (mb) { mb.href = "mailto:" + mb.getAttribute("data-u") + "@" + mb.getAttribute("data-d"); }
+  var mi = document.getElementById("mailInfo");
+  if (mb && mi) {
+    mb.addEventListener("click", function () {
+      var addr = mb.getAttribute("data-u") + "@" + mb.getAttribute("data-d");
+      var copied = false;
+      var show = function () {
+        mi.hidden = false;
+        mi.innerHTML = "";
+        var t = document.createElement("span");
+        t.className = "addr"; t.textContent = addr;
+        var note = document.createElement("span");
+        note.className = "note"; note.textContent = copied ? "已複製到剪貼簿" : "可直接選取複製";
+        var g = document.createElement("a");
+        g.href = "https://mail.google.com/mail/?view=cm&fs=1&to=" + encodeURIComponent(addr);
+        g.target = "_blank"; g.rel = "noopener"; g.textContent = "用 Gmail 撰寫";
+        var m = document.createElement("a");
+        m.href = "mailto:" + addr; m.textContent = "用預設郵件程式";
+        mi.appendChild(t); mi.appendChild(note); mi.appendChild(g); mi.appendChild(m);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(addr).then(function () { copied = true; show(); }, show);
+      } else { show(); }
+    });
+  }
+
+  // ----- hero avatar: smooth scroll to the author card and flash it -----
+  var av = document.querySelector("a.hero-avatar");
+  var author = document.querySelector(".author");
+  if (av && author) {
+    av.addEventListener("click", function (e) {
+      e.preventDefault();
+      var target = document.getElementById("about") || author;
+      target.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+      author.classList.remove("flash");
+      void author.offsetWidth;
+      author.classList.add("flash");
+      try { history.replaceState(null, "", "#about"); } catch (err) {}
+    });
+  }
 
   // ----- card spotlight -----
   document.querySelectorAll(".post-card").forEach(function (c) {

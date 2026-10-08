@@ -16,7 +16,9 @@
   <nav class="nav">
     <a href="index.html#architecture" class="hide-m">架構</a>
     <a href="index.html#posts">文章</a>
+    <a href="index.html#lab">互動</a>
     <a href="index.html#roadmap" class="hide-m">進度</a>
+    <a href="index.html#resume" class="hide-m">履歷</a>
     <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
   </nav>
 </div></header>
@@ -30,7 +32,7 @@
   <div class="btns reveal d3"><a class="btn primary" href="#posts">開始閱讀 →</a><a class="btn" href="posts/01-overview.html">先看整體架構</a></div>
   <div class="notice reveal d3">這是模擬專案：所有資料與事件都由程式產生，不代表任何真實工廠或其內部系統的做法。</div>
  </div>
- <div class="hero-avatar reveal d2"><div class="ring"></div><img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像:戴毛帽的藍色小人" width="256" height="256"></div>
+ <a class="hero-avatar reveal d2" href="#about" aria-label="關於作者" title="關於作者"><span class="ring"></span><img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像:戴毛帽的藍色小人" width="512" height="512"><span class="hint">關於我 ↓</span></a>
 </div>
 </div></section>
 
@@ -88,32 +90,48 @@
 <section class="block" id="posts"><div class="wrap">
   <h2 class="sec-title reveal">文章</h2>
   <p class="sec-sub reveal">建議照順序閱讀，也可以直接挑有興趣的主題。多數文章附有「給 .NET 開發者的對照」。</p>
+  <div class="filters" id="filters" hidden>
+    <input id="q" type="search" placeholder="搜尋文章(標題、關鍵字)" aria-label="搜尋文章">
+    <div class="tagbar" role="group" aria-label="依標籤篩選"></div>
+  </div>
   <div class="cards">
-<a class="post-card reveal d1" href="posts/01-overview.html">
+<a class="post-card reveal d1" href="posts/01-overview.html" data-tags="架構|微服務" data-search="為什麼做 Fab Monitor?整體架構一次看懂 一個模擬晶圓廠批次與設備事件的微服務練習專案:四個服務、一條事件匯流排,以及我為什麼這樣切。 架構 微服務">
   <span class="no">NOTE 01</span><h3>為什麼做 Fab Monitor？整體架構一次看懂</h3><p>一個模擬晶圓廠批次與設備事件的微服務練習專案：四個服務、一條事件匯流排，以及我為什麼這樣切。</p>
   <span class="meta">約 8 分鐘 · 架構 / 微服務</span></a>
-<a class="post-card reveal d2" href="posts/02-hexagonal.html">
+<a class="post-card reveal d2" href="posts/02-hexagonal.html" data-tags="Spring Boot|六角架構|C# 對照" data-search="第 1 週:用六角架構寫出第一個服務 lot-service 從 C#/.NET 的視角看 Spring Boot:領域、應用、Web、基礎設施四層,以及用 ArchUnit 把分層規則寫成會失敗的測試。 Spring Boot 六角架構 C# 對照">
   <span class="no">NOTE 02</span><h3>第 1 週：用六角架構寫出第一個服務 lot-service</h3><p>從 C#/.NET 的視角看 Spring Boot：領域、應用、Web、基礎設施四層，以及用 ArchUnit 把分層規則寫成會失敗的測試。</p>
   <span class="meta">約 12 分鐘 · Spring Boot / 六角架構 / C# 對照</span></a>
-<a class="post-card reveal d3" href="posts/03-rabbitmq.html">
+<a class="post-card reveal d3" href="posts/03-rabbitmq.html" data-tags="RabbitMQ|事件驅動" data-search="第 2 週:用 RabbitMQ 把服務串起來 exchange、queue、binding、routing key、死信佇列各是什麼?事件契約怎麼訂?為什麼 queue 要由消費者宣告? RabbitMQ 事件驅動">
   <span class="no">NOTE 03</span><h3>第 2 週：用 RabbitMQ 把服務串起來</h3><p>exchange、queue、binding、routing key、死信佇列各是什麼？事件契約怎麼訂？為什麼 queue 要由消費者宣告？</p>
   <span class="meta">約 12 分鐘 · RabbitMQ / 事件驅動</span></a>
-<a class="post-card reveal d1" href="posts/04-idempotency.html">
+<a class="post-card reveal d1" href="posts/04-idempotency.html" data-tags="冪等|交易|PostgreSQL" data-search="訊息會重複送達:冪等消費與交易 at-least-once 意味著同一則訊息可能來兩次。processed_event 表、ON CONFLICT DO NOTHING 與「同一個交易」的設計。 冪等 交易 PostgreSQL">
   <span class="no">NOTE 04</span><h3>訊息會重複送達：冪等消費與交易</h3><p>at-least-once 意味著同一則訊息可能來兩次。processed_event 表、ON CONFLICT DO NOTHING 與「同一個交易」的設計。</p>
   <span class="meta">約 9 分鐘 · 冪等 / 交易 / PostgreSQL</span></a>
-<a class="post-card reveal d2" href="posts/05-simulator.html">
+<a class="post-card reveal d2" href="posts/05-simulator.html" data-tags="模擬器|設計取捨" data-search="機台模擬器:沒有真機台,就自己造事件 可重現的隨機、故意送壞訊息、啟動時對齊真實狀態;以及「找不到 lot 要不要自動建立」的設計取捨。 模擬器 設計取捨">
   <span class="no">NOTE 05</span><h3>機台模擬器：沒有真機台，就自己造事件</h3><p>可重現的隨機、故意送壞訊息、啟動時對齊真實狀態；以及「找不到 lot 要不要自動建立」的設計取捨。</p>
   <span class="meta">約 10 分鐘 · 模擬器 / 設計取捨</span></a>
-<a class="post-card reveal d3" href="posts/06-failure.html">
+<a class="post-card reveal d3" href="posts/06-failure.html" data-tags="錯誤處理|死信佇列" data-search="失敗處理:業務錯誤不重試,技術錯誤才重試 把失敗分成兩種,各走各的路;再把兩大段 stack trace 縮成一行 log。 錯誤處理 死信佇列">
   <span class="no">NOTE 06</span><h3>失敗處理：業務錯誤不重試，技術錯誤才重試</h3><p>把失敗分成兩種，各走各的路；再把兩大段 stack trace 縮成一行 log。</p>
   <span class="meta">約 9 分鐘 · 錯誤處理 / 死信佇列</span></a>
-<a class="post-card reveal d1" href="posts/07-pitfalls.html">
+<a class="post-card reveal d1" href="posts/07-pitfalls.html" data-tags="除錯|經驗" data-search="問題與解法:開發中遇到的七個狀況 兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步等問題,以及各自的原因與做法。 除錯 經驗">
   <span class="no">NOTE 07</span><h3>問題與解法：開發中遇到的七個狀況</h3><p>兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步等問題，以及各自的原因與做法。</p>
   <span class="meta">約 5 分鐘 · 除錯 / 經驗</span></a>
-<a class="post-card reveal d2" href="posts/08-industry.html">
+<a class="post-card reveal d2" href="posts/08-industry.html" data-tags="業界對照|Kafka|MQTT" data-search="業界怎麼做?SECS/GEM、MQTT、Kafka 與雲端服務對照 模擬專案跟真實半導體廠的差距在哪?換掉 RabbitMQ 之後,exchange 與 queue 會變成什麼? 業界對照 Kafka MQTT">
   <span class="no">NOTE 08</span><h3>業界怎麼做？SECS/GEM、MQTT、Kafka 與雲端服務對照</h3><p>模擬專案跟真實半導體廠的差距在哪？換掉 RabbitMQ 之後，exchange 與 queue 會變成什麼？</p>
   <span class="meta">約 8 分鐘 · 業界對照 / Kafka / MQTT</span></a>
   </div>
+  <p class="no-match" id="noMatch" hidden>沒有符合的文章，換個關鍵字或標籤試試。</p>
+</div></section>
+
+<section class="block" id="lab"><div class="wrap">
+  <h2 class="sec-title reveal">互動實驗室</h2>
+  <p class="sec-sub reveal">不用安裝任何東西，直接在瀏覽器裡操作。這裡是用前端程式碼模擬的小版本，規則照專案的設計寫，不是連到真正的 RabbitMQ。</p>
+  <h3 class="lab-h reveal">事件流沙盒</h3>
+  <p class="lab-p reveal">依序按「建立批次 → 進站 → 出站」看事件怎麼流動；再試試「重送上一則」（冪等）、「送壞訊息」（直接進死信佇列）與「資料庫閃斷」（技術錯誤才會重試）。</p>
+  <div class="lab-card reveal" id="sandbox"></div>
+  <h3 class="lab-h reveal">Lot 狀態機</h3>
+  <p class="lab-p reveal">點按鈕改變批次的狀態。不合法的操作會被拒絕，對應 REST API 回傳的 409。</p>
+  <div class="lab-card reveal" data-widget="lot-fsm"></div>
 </div></section>
 
 <section class="block" id="roadmap"><div class="wrap">
@@ -131,12 +149,24 @@
 
 <section class="block" id="about"><div class="wrap">
   <div class="author reveal">
-    <img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="96" height="96">
+    <img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="512" height="512">
     <div>
       <h2 class="sec-title">關於作者</h2>
       <p><strong>Shawn Chen</strong> · 全端工程師，專注於 Web 系統與後端服務。</p>
       <p>我對製造業的事件驅動系統很感興趣，因此做了 Fab Monitor，把微服務、訊息佇列、容器化與 CI/CD 實際串成一個完整的專案。這個網站是專案的設計說明，也是我的學習筆記。</p>
-      <div class="btns"><a class="btn" href="https://github.com/aooal">GitHub ↗</a><a class="btn" id="mailBtn" href="#about" data-u="taboi40145" data-d="gmail.com">寄信給我 ✉</a></div>
+      <div class="btns"><a class="btn" href="https://github.com/aooal">GitHub ↗</a><button type="button" class="btn" id="mailBtn" data-u="taboi40145" data-d="gmail.com">寄信給我 ✉</button></div>
+      <div class="mail-info" id="mailInfo" hidden></div>
+    </div>
+  </div>
+</div></section>
+
+<section class="block" id="resume"><div class="wrap">
+  <h2 class="sec-title reveal">履歷</h2>
+  <div class="resume-slot reveal">
+    <div class="rs-icon" aria-hidden="true">📄</div>
+    <div>
+      <p><strong>整理中，專案完成後上線。</strong>等 Fab Monitor 六週計畫完成，我會依專案成果更新履歷，並放在這裡提供下載與線上閱讀。</p>
+      <div class="btns"><button type="button" class="btn" disabled aria-disabled="true">下載履歷 PDF（即將上線）</button></div>
     </div>
   </div>
 </div></section>
@@ -149,7 +179,8 @@
 
 <footer class="site-footer"><div class="wrap">
   <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
-  <p class="by"><img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="40" height="40">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
+  <p class="by"><img src="assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="512" height="512">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
 </div></footer>
 <script src="assets/site.js"></script>
+<script src="assets/widgets.js"></script>
 </body></html>
