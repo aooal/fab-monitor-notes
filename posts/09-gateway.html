@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 3 週（三）：api-gateway 與操作台 · Fab Monitor 開發筆記</title>
+<meta name="description" content="唯一的對外入口、集中的角色規則、401 與 403 的差別,以及用 Vue 3 做的小型操作台:為什麼機台不能直接 RUN。">
+<link rel="icon" href="../assets/avatar-sm.jpg">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#lab">互動</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <a href="../index.html#resume" class="hide-m">履歷</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 09 篇 / 共 11 篇</div>
+  <h1><span class="grad">第 3 週（三）：api-gateway 與操作台</span></h1>
+  <div class="meta"><span>約 12 分鐘</span><span class="tag">API Gateway</span><span class="tag">Vue</span><span class="tag">CORS</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>服務越來越多，瀏覽器不該知道四個不同的埠號，每個服務也不該各自重寫一遍登入檢查。這篇講 <code>api-gateway</code>（唯一的對外入口）與我做的小型操作台（<code>ops-console</code>）。</p>
+
+<h2>閘道做兩件事</h2>
+<ol>
+<li><strong>轉發</strong>：所有請求打 <code>localhost:8080</code>，閘道依路徑轉給對的服務。</li>
+<li><strong>把關</strong>：驗證 access token，並依角色決定能不能呼叫。</li>
+</ol>
+<table>
+<thead><tr><th>路徑</th><th>轉發到</th></tr></thead>
+<tbody>
+<tr><td><code>/api/auth/**</code></td><td>auth-service(8084)</td></tr>
+<tr><td><code>/api/lots/**</code></td><td>lot-service(8081)</td></tr>
+<tr><td><code>/api/equipment/**</code></td><td>equipment-service(8082)</td></tr>
+<tr><td><code>/api/alarms/**</code></td><td>alarm-service(8083)</td></tr>
+</tbody></table>
+<p>我用的是 Spring Cloud Gateway 的 <strong>MVC 版</strong>（servlet），不是 WebFlux 版。理由很簡單：其他服務都是 servlet，用同一套測試方式與心智模型，不為了一個閘道多學一套反應式程式設計。這個決定記錄在 ADR 0003。</p>
+
+<h2>誰能做什麼</h2>
+<p>所有規則集中在一個類別 <code>SecurityConfig</code>，一眼看得完：</p>
+<table>
+<thead><tr><th>請求</th><th>需要</th></tr></thead>
+<tbody>
+<tr><td>登入、換 token、登出、健康檢查</td><td>不用 token</td></tr>
+<tr><td>GET 批次、機台、警報</td><td>OPERATOR 或 ADMIN</td></tr>
+<tr><td>確認警報（<code>POST /api/alarms/*/acknowledge</code>)</td><td>OPERATOR 或 ADMIN</td></tr>
+<tr><td>其他會改變批次或機台的請求</td><td>ADMIN</td></tr>
+<tr><td>沒列出的路徑</td><td>一律拒絕（連 ADMIN 也不行）</td></tr>
+</tbody></table>
+<p>最後一列是「預設拒絕」（deny by default）：新增了路徑卻忘了設規則，結果是打不開，而不是不小心對外全開。</p>
+<p>錯誤回應用跟其他服務一致的 RFC 9457 格式：沒帶 token 或 token 無效是 <strong>401</strong>，有 token 但角色不夠是 <strong>403</strong>。這兩個要分清楚，401 是「我不知道你是誰」，403 是「我知道你是誰，但你不能做這件事」。</p>
+<pre><code data-lang="java">OAuth2TokenValidator&lt;Jwt&gt; validator = new DelegatingOAuth2TokenValidator&lt;&gt;(
+        JwtValidators.createDefaultWithIssuer(props.security().issuer()));</code></pre>
+<p>驗證時用 auth-service 公開的公鑰檢查 RS256 簽章，同時檢查有沒有過期、發行者（issuer）對不對。token 裡的 <code>roles</code> 會被轉成 Spring Security 的 <code>ROLE_ADMIN</code> 這類權限。</p>
+
+<h2>CORS</h2>
+<p>操作台跑在 <code>localhost:5173</code>，閘道在 <code>localhost:8080</code>，對瀏覽器來說是不同來源，所以閘道要明確允許。我只允許操作台的來源，不開萬用字元。瀏覽器正式請求前會先送一個不帶 token 的 <code>OPTIONS</code> 預檢，閘道要放行它，否則連登入都送不出去。</p>
+
+<h2>測試：假的後端 + 真的閘道</h2>
+<p>閘道的測試會啟動真正的閘道，再用 JDK 內建的小型 HTTP 伺服器假扮「auth-service 的公鑰端點」與四個後端服務。測試自己產生一組 RSA 金鑰來簽 token，於是能涵蓋：沒帶 token、用別把金鑰簽的偽造 token、過期 token、發行者不對、各角色的權限、路徑真的轉到對的服務、登入不需要 token、預檢通過與陌生來源被拒。共 13 個測試，全程不需要資料庫或 Docker。</p>
+
+<h2>操作台</h2>
+<p>終於有一個畫面可以操作整個系統，不用再手打 API 或 Swagger。技術是 Vue 3、Vite、TypeScript，元件用 PrimeVue。功能刻意縮小：</p>
+<ul>
+<li>登入，access token 只放記憶體，refresh token 放瀏覽器儲存空間，重新整理頁面不會被登出。</li>
+<li>機台清單與狀態；ADMIN 才看得到模擬按鈕（進站、出站、設為 DOWN、恢復）。</li>
+<li>警報清單，預設顯示「進行中」（OPEN 與 ACKNOWLEDGED）；OPEN 的警報有「確認」按鈕。</li>
+<li>每 5 秒自動更新；錯誤用不會自動消失的彈窗顯示。</li>
+</ul>
+
+<h3>自動續期要小心「同時」</h3>
+<p>因為 refresh token 每次使用就作廢，如果頁面同時有三個請求都收到 401，各自拿同一顆 refresh token 去換，第二個和第三個會被當成「重複使用」，整組 token 被撤銷，使用者被登出。所以續期的函式在進行中時，後來的呼叫都共用同一個進行中的請求：</p>
+<pre><code>export function refresh(): Promise&lt;boolean&gt; {
+  if (refreshing) return refreshing   // 已經在換了,等同一個結果
+  ...
+}</code></pre>
+<p>這是前端與後端「輪替」設計互相牽動的一個例子。</p>
+
+<h3>為什麼機台不能直接 RUN？</h3>
+<p>我一開始在操作台放了 RUN / IDLE / DOWN 三顆按鈕，按下 RUN 卻回 409：「沒有批次不能 RUN，請用 track-in」。這是領域規則，機台運轉代表上面有一批晶圓，不是一個單純的標籤。所以按鈕改成貼近真實的操作：閒置的機台顯示「進站」（下拉選一個可用的批次），有批次的顯示「出站」，DOWN 的顯示「恢復」。為此我在 equipment-service 補了 <code>track-in</code> 與 <code>track-out</code> 兩個 REST 端點。</p>
+<p>「恢復」也依規則決定回到哪裡：還握著批次的回到 RUN，沒有批次的回到 IDLE。</p>
+
+<h2>遇到的兩個狀況</h2>
+<table>
+<thead><tr><th>現象</th><th>原因</th><th>做法</th></tr></thead>
+<tbody>
+<tr><td>登入時閘道回 500，log 一長串 <code>ClosedChannelException</code></td><td>auth-service 沒啟動，因為它的資料庫容器（5435）沒有起來，啟動時連不上就結束了</td><td>先 <code>docker compose up -d</code>，再啟動服務。待辦：閘道後端連不上時應回清楚的 502，而不是 500</td></tr>
+<tr><td>畫面右下角出現 <code>Invalid PrimeUI License</code></td><td>剛裝的 PrimeVue 是新的 5.x 版，它要求授權</td><td>固定使用免費的 4.x 版</td></tr>
+</tbody></table>
+
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>閘道相當於 YARP（反向代理）加上 JWT Bearer 驗證與授權政策；<code>SecurityConfig</code> 的規則就像 <code>[Authorize(Roles = "...")]</code> 集中寫在一個地方。操作台則對應一個獨立的前端專案（Blazor WASM 或 Angular）呼叫這個 Web API。</p></div>
+
+<h2>已知的限制</h2>
+<ul>
+<li>後端服務信任閘道，自己不驗證 token，所以不能直接暴露在外（compose 網路或 Kubernetes 內部才安全）。</li>
+<li>refresh token 放在瀏覽器儲存空間，理論上腳本注入可以讀走；正式環境會改用 HttpOnly cookie。</li>
+<li>閘道還沒有限流與請求紀錄。</li>
+<li>操作台是每 5 秒輪詢，不是即時推送。</li>
+</ul>
+
+<div class="post-nav"><a class="prev" href="08-auth.html"><small>← 上一篇</small>第 3 週（二）：auth‑service，RS256 JWT 與會輪替的 refresh token</a><a class="next" href="10-pitfalls.html"><small>下一篇 →</small>問題與解法：開發中遇到的七個狀況</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
+  <p class="by"><img src="../assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="512" height="512">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+<script src="../assets/widgets.js"></script>
+</body></html>

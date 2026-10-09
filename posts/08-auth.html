@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 3 週（二）：auth-service，RS256 JWT 與會輪替的 refresh token · Fab Monitor 開發筆記</title>
+<meta name="description" content="為什麼用非對稱簽章、access token 為什麼只有 15 分鐘、refresh token 怎麼偵測被偷走,以及一個容易踩到的交易回滾陷阱。">
+<link rel="icon" href="../assets/avatar-sm.jpg">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#lab">互動</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <a href="../index.html#resume" class="hide-m">履歷</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 08 篇 / 共 11 篇</div>
+  <h1><span class="grad">第 3 週（二）：auth-service，RS256 JWT 與會輪替的 refresh token</span></h1>
+  <div class="meta"><span>約 11 分鐘</span><span class="tag">JWT</span><span class="tag">安全</span><span class="tag">Spring Security</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>系統需要登入，但我不想只做一個「帳號密碼對就放行」的玩具。這篇記錄 <code>auth-service</code> 的設計：為什麼用 RS256 簽章的 JWT，為什麼 access token 只有 15 分鐘，以及會自動換新、而且能偵測被偷走的 refresh token。</p>
+
+<h2>先講結論：兩種 token</h2>
+<table>
+<thead><tr><th></th><th>Access token</th><th>Refresh token</th></tr></thead>
+<tbody>
+<tr><td>長相</td><td>JWT（RS256 簽章）</td><td>隨機字串，不是 JWT</td></tr>
+<tr><td>有效時間</td><td>15 分鐘</td><td>7 天</td></tr>
+<tr><td>用途</td><td>每個 API 請求都帶，閘道驗證</td><td>只拿來換新的 token，只給 auth-service</td></tr>
+<tr><td>伺服器存什麼</td><td>什麼都不存（自帶簽章）</td><td>只存 SHA-256 雜湊</td></tr>
+<tr><td>可以撤銷嗎</td><td>不行，只能等過期</td><td>可以</td></tr>
+</tbody></table>
+
+<h2>為什麼是 RS256，不是 HS256？</h2>
+<p>HS256 用同一把祕密金鑰簽章與驗證，每個要驗證 token 的服務都要拿到這把金鑰，而有金鑰就能自己「偽造」token。RS256 是非對稱的：<strong>私鑰只在 auth-service</strong>，負責簽發；公鑰公開在 <code>/.well-known/jwks.json</code>，任何人（包含閘道）都能驗證，但沒有人能用公鑰簽出新的 token。閘道被攻破，也拿不到能簽 token 的東西。</p>
+<p>token 的標頭有 <code>kid</code>（公鑰的指紋），閘道靠它在 JWKS 裡找到對的那一把，將來換金鑰時新舊並存也不會亂。</p>
+
+<h2>為什麼 access token 只有 15 分鐘？</h2>
+<p>JWT 有一個性質：簽出去就收不回來，伺服器沒有「登出這個 token」的辦法，只能等它過期。如果有效期是 8 小時，token 被偷的人就有 8 小時可以用。我一開始曾考慮設 8 小時，因為使用者不用常常重新登入；後來改回業界常見的 15 分鐘，把「不用重新登入」的體驗交給 refresh token 處理。</p>
+<p>操作台在 token 失效（回 401）時，會自動拿 refresh token 換一組新的，再重試剛才失敗的請求，使用者完全沒感覺。</p>
+
+<h2>Refresh token：每用一次就換新</h2>
+<p>refresh token 是 256 位元的隨機字串。資料庫只存它的 SHA-256 雜湊，所以資料庫外洩也拿不到可用的 token（跟密碼不存明文是同一個道理；因為它本身是高熵隨機值，雜湊用 SHA-256 就夠，不需要像密碼那樣用 BCrypt）。</p>
+<p>每次拿它換新 token，舊的就作廢，同時發一個新的，這叫輪替（rotation）。重點在下面這段：</p>
+<pre><code data-lang="java">if (token.isRevoked()) {
+    // 已經用掉的 token 又出現了:可能是程式錯誤,也可能是被偷走。
+    int revoked = refreshTokens.revokeAllActive(token.getUserId(), now);
+    log.warn("Refresh token reuse detected ...");
+    throw new InvalidRefreshTokenException();
+}</code></pre>
+<p>如果一個「已經用過」的 refresh token 又被拿來用，代表同一份 token 在兩個地方出現了：正常使用者和偷走它的人，其中一方會先用、另一方後用。系統無法判斷誰是誰，所以<strong>直接撤銷這個使用者所有進行中的 refresh token</strong>，兩邊都得重新登入。被偷走的 token 因此最多只能撐到下一次輪替。</p>
+<div class="callout warn"><b class="t">一個容易踩到的交易陷阱</b><p>上面那段是「先撤銷，再丟出例外」。Spring 預設遇到例外會把交易整個回滾，連剛撤銷的結果一起退回，偵測就白做了。所以這個方法要寫成 <code>@Transactional(noRollbackFor = InvalidRefreshTokenException.class)</code>，讓撤銷先提交，例外再丟出。</p></div>
+<p>另外「撤銷這顆 token」是一條帶條件的 UPDATE（<code>WHERE revoked_at IS NULL</code>），回傳有沒有真的改到列。兩個請求同時拿同一顆 token 來換，只會有一個成功，另一個得到 false 而被拒絕，不會雙雙成功發出兩組新 token。</p>
+
+<h2>登入的小細節</h2>
+<ul>
+<li>密碼用 BCrypt 雜湊儲存。</li>
+<li>帳號不存在和密碼錯誤，回應完全一樣（都是 401 與同一句話），不讓人藉此探測哪些帳號存在。</li>
+<li>帳號不存在時，仍然會跟一個假的雜湊比對一次，讓兩種情況花的時間差不多，避免從回應時間猜出帳號是否存在。</li>
+<li>兩個角色：<code>ADMIN</code> 與 <code>OPERATOR</code>。沒有自助註冊，開發用的假帳號由設定檔建立。</li>
+</ul>
+
+<h2>授權由閘道決定</h2>
+<p>auth-service 只負責「你是誰」。「你能做什麼」由閘道依 token 裡的 <code>roles</code> 判斷（下一篇），後端各服務信任閘道，自己不再驗證。這是一個刻意記錄下來的限制：後端服務不能直接暴露在外，否則就沒有任何驗證。這個取捨寫在 ADR 0002。</p>
+
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>概念上跟 ASP.NET Core 的 <code>AddJwtBearer</code> 一樣，差別是這裡簽發與驗證分成兩個服務。<code>/.well-known/jwks.json</code> 相當於 OpenID Connect 的 discovery 文件裡的公鑰端點，許多 IdP（Entra ID、Auth0、Keycloak）都用同樣的方式發佈金鑰。</p></div>
+
+<h2>目前已知的限制</h2>
+<ul>
+<li>沒有「連續登入失敗就鎖帳號」。</li>
+<li>過期的 refresh token 還沒有排程清除。</li>
+<li>沒有指定私鑰檔時，服務啟動會產生臨時金鑰（只限開發），重啟後舊 token 全部失效。上 Kubernetes 時會把 PKCS#8 格式的私鑰放進 Secret 掛載。</li>
+</ul>
+
+<h2>測試</h2>
+<p>auth-service 共 43 個測試，其中包含一個真的啟動 HTTP 伺服器的端對端測試，從登入、換新到登出走一遍；另外也有針對 refresh token 輪替、BCrypt、RSA 金鑰與 JWT 簽發的單元測試，和用 Testcontainers 的資料庫整合測試。</p>
+
+<div class="post-nav"><a class="prev" href="07-alarm.html"><small>← 上一篇</small>第 3 週（一）：alarm‑service，用規則把事件變成告警</a><a class="next" href="09-gateway.html"><small>下一篇 →</small>第 3 週（三）：api‑gateway 與操作台</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
+  <p class="by"><img src="../assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="512" height="512">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+<script src="../assets/widgets.js"></script>
+</body></html>

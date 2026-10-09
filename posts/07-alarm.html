@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 3 週（一）：alarm-service，用規則把事件變成告警 · Fab Monitor 開發筆記</title>
+<meta name="description" content="策略模式的告警規則、OPEN / ACKNOWLEDGED / CLOSED 三種狀態、資料庫的部分唯一索引,以及一個靠實際操作才發現的事件漏發 bug。">
+<link rel="icon" href="../assets/avatar-sm.jpg">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#lab">互動</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <a href="../index.html#resume" class="hide-m">履歷</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 07 篇 / 共 11 篇</div>
+  <h1><span class="grad">第 3 週（一）：alarm-service，用規則把事件變成告警</span></h1>
+  <div class="meta"><span>約 10 分鐘</span><span class="tag">告警</span><span class="tag">策略模式</span><span class="tag">PostgreSQL</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>第 3 週的第一塊是 <code>alarm-service</code>：訂閱機台狀態的變化，依「規則」決定要不要開告警，機台恢復時自動關閉，操作員可以確認（acknowledge）。這篇講規則怎麼設計、告警的狀態與資料庫怎麼把關，以及一個我自己漏掉、靠實際操作才發現的 bug。</p>
+
+<h2>需求</h2>
+<ul>
+<li>機台變成 <code>DOWN</code> 時，產生一筆 <code>OPEN</code> 告警。</li>
+<li>操作員看到後按「確認」，告警變成 <code>ACKNOWLEDGED</code>（代表有人接手，不代表機台已修好）。</li>
+<li>機台離開 <code>DOWN</code>（恢復）時，告警自動變成 <code>CLOSED</code>，不論有沒有人確認過。</li>
+<li>同一台機台同時只能有一筆「進行中」的同類告警，重複送來的 DOWN 不能產生第二筆。</li>
+</ul>
+
+<h2>告警的三個狀態</h2>
+<table>
+<thead><tr><th>狀態</th><th>意思</th><th>誰讓它變成這樣</th></tr></thead>
+<tbody>
+<tr><td><code>OPEN</code></td><td>已發生，還沒有人看過</td><td>規則被觸發</td></tr>
+<tr><td><code>ACKNOWLEDGED</code></td><td>有人看過並接手，原因可能還在</td><td>操作員按確認（只能從 OPEN 確認）</td></tr>
+<tr><td><code>CLOSED</code></td><td>原因消失</td><td>機台恢復，系統自動關閉</td></tr>
+</tbody></table>
+<p>把「有人看過」和「問題解決」分成兩個狀態很重要：值班的人要知道哪些告警已經有人處理，但也不能因為按了確認，就以為機台好了。</p>
+
+<h2>規則：一個介面，一個實作一種告警</h2>
+<p>「什麼情況要開告警」會一直增加（機台當機、溫度過高、連續失敗……），所以我不把判斷寫死在服務裡，而是做成一個介面，每種告警一個實作，這就是策略模式（Strategy）：</p>
+<pre><code data-lang="java">public interface AlarmRule {
+    String code();                                        // 例如 EQUIPMENT_DOWN
+    boolean raisedBy(EquipmentStatusChange change);       // 這次變化要開告警嗎?
+    boolean resolvedBy(EquipmentStatusChange change);     // 這次變化代表原因消失了嗎?
+    String describe(EquipmentStatusChange change);        // 給操作員看的訊息
+}</code></pre>
+<p>目前只有一條規則 <code>EquipmentDownRule</code>：</p>
+<pre><code data-lang="java">public boolean raisedBy(EquipmentStatusChange change) {
+    return change.to() == EquipmentStatus.DOWN &amp;&amp; change.from() != EquipmentStatus.DOWN;
+}
+
+public boolean resolvedBy(EquipmentStatusChange change) {
+    return change.from() == EquipmentStatus.DOWN &amp;&amp; change.to() != EquipmentStatus.DOWN;
+}</code></pre>
+<p>應用層只認識介面。Spring 會把所有 <code>AlarmRule</code> 的實作收集成一個 <code>List&lt;AlarmRule&gt;</code> 注入，事件進來時逐條詢問。想新增一種告警，只要新增一個類別並註冊成 bean，服務本身一行都不用改。</p>
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>這等於把同一個介面 <code>IAlarmRule</code> 在 DI 容器註冊多次，再用 <code>IEnumerable&lt;IAlarmRule&gt;</code> 注入。Spring 的 <code>List&lt;AlarmRule&gt;</code> 就是它的對應。</p></div>
+
+<h2>處理一個事件：同一個交易裡做完</h2>
+<pre><code data-lang="java">@Transactional
+public void onStatusChanged(UUID eventId, EquipmentStatusChange change) {
+    if (!processedEvents.markProcessed(eventId, now)) {   // 重複的訊息直接略過
+        return;
+    }
+    for (AlarmRule rule : rules) {
+        if (rule.resolvedBy(change)) close(change.equipmentId(), rule, now);
+        if (rule.raisedBy(change))   raise(change, rule, now);
+    }
+}</code></pre>
+<p>「記錄這個事件已處理」和「開、關告警」放在同一個交易，要嘛全成功，要嘛全部退回。這跟第 4 篇的冪等消費是同一個做法，訊息重送時不會多開告警。</p>
+
+<h2>資料庫是最後一道防線</h2>
+<p>程式裡已經檢查「這台機台有沒有進行中的告警」，但兩個事件如果幾乎同時進來，兩邊都可能看到「沒有」。所以我另外用資料庫的<strong>部分唯一索引</strong>（partial unique index）把關：</p>
+<pre><code data-lang="sql">CREATE UNIQUE INDEX uq_alarm_active_per_equipment_rule
+    ON alarm (equipment_id, rule_code)
+    WHERE status &lt;&gt; 'CLOSED';</code></pre>
+<p>意思是：只對「還沒關閉」的列要求 （機台， 規則） 不重複。已關閉的歷史告警可以有很多筆，進行中的永遠只有一筆。程式邏輯寫給人看，資料庫約束寫給「萬一」。</p>
+
+<h2>REST 與事件</h2>
+<table>
+<thead><tr><th>方法與路徑</th><th>用途</th></tr></thead>
+<tbody>
+<tr><td><code>GET /api/alarms?status=&amp;equipmentId=</code></td><td>查詢，兩個條件都可省略</td></tr>
+<tr><td><code>GET /api/alarms/{id}</code></td><td>單筆</td></tr>
+<tr><td><code>POST /api/alarms/{id}/acknowledge</code></td><td>確認，body 是 <code>{"acknowledgedBy": "..."}</code>；非 OPEN 的告警回 409</td></tr>
+</tbody></table>
+<p>事件這邊，alarm-service 自己宣告 queue <code>alarm-service.equipment-events</code>，綁定 <code>equipment.status-changed</code>，失敗處理與前兩個服務一致（業務錯誤直接進死信佇列，技術錯誤重試三次）。</p>
+
+<h2>一個靠實際操作才發現的 bug</h2>
+<p>單元測試和整合測試全過了，我手動呼叫機台的 REST API 把 <code>EQP-ETCH-01</code> 改成 DOWN，結果 alarm-service 的告警列表是空的。</p>
+<p>查下去，原因是 equipment-service 裡<strong>有兩條路可以改變機台狀態</strong>：一條是處理 RabbitMQ 事件（會發布 <code>equipment.status-changed</code>），另一條是 REST API。我只在第一條加了發布事件，REST 這條漏了。所以從 REST 改狀態，資料庫變了，卻沒人通知 alarm-service。</p>
+<p>修法是把「狀態改變就發布事件」放進兩條路共用的那段程式，並補了單元測試（用一個只會記錄的假發布者，驗證各種操作發出了什麼事件）。</p>
+<div class="callout warn"><b class="t">這次學到的</b><p>如果同一個結果可以從好幾個入口觸發，它的「副作用」（發事件、寫稽核紀錄）就要放在共用的地方，不要放在其中一個入口。另外，各服務的測試各自通過，不代表串起來是對的，所以才需要像操作台這樣能從頭操作一次的畫面。</p></div>
+<p>順帶一提，這也順便碰到了第 7 篇提過的「啟動順序」限制：如果 alarm-service 還沒啟動過，它的 queue 還不存在，先發出去的事件就會消失。解法一樣是先啟動所有消費者，之後會用 Outbox 模式根本解決。</p>
+
+<h2>測試</h2>
+<p>alarm-service 共 45 個測試：規則本身的單元測試、告警狀態轉換、應用層用假的 repository 測流程、ArchUnit 守分層、監聽器的失敗分類，以及用 Testcontainers 啟動真的 PostgreSQL 做的資料庫整合測試。</p>
+
+<h2>如何手動驗證</h2>
+<ol>
+<li>啟動 RabbitMQ、各資料庫，再依序啟動 alarm-service、equipment-service。</li>
+<li>把機台設為 DOWN（之後有操作台，不必再手打 API）。</li>
+<li>查 <code>GET /api/alarms</code>，應該看到一筆 <code>OPEN</code> 的 <code>EQUIPMENT_DOWN</code>。</li>
+<li>再把機台恢復，同一筆告警會變成 <code>CLOSED</code>。</li>
+</ol>
+
+<div class="post-nav"><a class="prev" href="06-failure.html"><small>← 上一篇</small>失敗處理：業務錯誤不重試，技術錯誤才重試</a><a class="next" href="08-auth.html"><small>下一篇 →</small>第 3 週（二）：auth‑service，RS256 JWT 與會輪替的 refresh token</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
+  <p class="by"><img src="../assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="512" height="512">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+<script src="../assets/widgets.js"></script>
+</body></html>

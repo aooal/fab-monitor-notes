@@ -252,7 +252,7 @@
       } else if (ev.type === "machine.status") {
         if (ev.status === "IDLE" && e.lot) throw new BizError("InvalidEquipmentOperationException", "Equipment " + EQP + " still holds lot " + e.lot);
         var from = e.status; e.status = ev.status;
-        if (from !== e.status) log("info", "equipment-service 發布 equipment.status-changed " + from + " → " + e.status + "（alarm-service 預計第 3 週才訂閱）");
+        if (from !== e.status) log("info", "equipment-service 發布 equipment.status-changed " + from + " → " + e.status + "（alarm-service 會訂閱，依規則開或關告警）");
       }
     }
     function applyLot(ev) {
