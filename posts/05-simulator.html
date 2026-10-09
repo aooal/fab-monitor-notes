@@ -25,7 +25,7 @@
 
 <div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
 <div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
-  <div class="eyebrow"><i></i>第 05 篇 / 共 11 篇</div>
+  <div class="eyebrow"><i></i>第 05 篇 / 共 12 篇</div>
   <h1><span class="grad">機台模擬器：沒有真機台，就自己造事件</span></h1>
   <div class="meta"><span>約 10 分鐘</span><span class="tag">模擬器</span><span class="tag">設計取捨</span></div>
 </div></div>
@@ -36,7 +36,7 @@
 <h2>模擬的是什麼</h2>
 <ul>
 <li>每批 Lot 25 片晶圓，依序經過五個站點：LITHO → ETCH → CVD → CMP → IMPLANT。</li>
-<li>機台進站、出站，偶爾故障（DOWN 機率 5%），之後再恢復。</li>
+<li>機台進站、出站，偶爾故障（DOWN），之後再恢復。故障多久、多常發生，見後面「更貼近真實的故障」。</li>
 <li>每次啟動產生一組新的批號前綴，例如 <code>LOT-10081531-</code>，避免和上次跑的撞號。</li>
 </ul>
 
@@ -65,6 +65,30 @@
 <p>原因很單純：<strong>模擬器有自己的記憶，真實狀態在另一個服務裡。</strong>兩邊的記憶不一致。</p>
 <p>解法是「啟動時對齊」：模擬器啟動時先呼叫 equipment-service 的 REST API 讀取三台機台的真實狀態，再從那個狀態接著模擬。若 equipment-service 還沒開，模擬器不會亂猜，而是記一行警告，每個 tick 重試，直到三台機台都問到為止才開始發事件。對齊的開關（<code>simulator.align-on-start</code>）可以關掉。</p>
 <div class="callout tip"><b class="t">業界也這樣做嗎？</b><p>思路相同：任何「帶有本地狀態的元件」重啟時，都應該先與真實來源（source of truth）同步，而不是假設從零開始。這跟服務啟動時重建快取、消費者從上次 offset 繼續是同一個概念。</p></div>
+
+<h2>更貼近真實的故障</h2>
+<p>最早的版本每個 tick 有 5% 機率讓機台故障，故障後 1 到 3 個 tick（約 3 到 9 秒）一定修好。接上告警與操作台後問題就出現了：告警開了幾秒就自己關掉，操作員根本來不及確認；而且機台常常壞，畫面一直在閃。這不像工廠，比較像壞掉的燈。</p>
+<p>我把故障改成幾個可以設定的特性：</p>
+<table>
+<thead><tr><th>特性</th><th>預設</th><th>用意</th></tr></thead>
+<tbody>
+<tr><td>故障率</td><td>每台每個 tick 1%</td><td>大約每台五分鐘壞一次，平常是正常的</td></tr>
+<tr><td>暫時性故障</td><td>30%，2 到 4 個 tick 自己好</td><td>感測器誤報、通訊逾時這類，來得快去得也快</td></tr>
+<tr><td>硬故障</td><td>70%，20 到 60 個 tick（1 到 3 分鐘）</td><td>真空、氣流問題，需要時間處理，操作員有機會確認</td></tr>
+<tr><td>閃斷（flapping）</td><td>修好後 10% 機率馬上再壞</td><td>測試會不會一直開新告警</td></tr>
+<tr><td>隨機種子</td><td>預設不固定</td><td>設定後同一個種子產生同一串故障，方便重現問題</td></tr>
+</tbody></table>
+<p>另外有一組 <code>demo</code> 設定檔（啟用設定檔 <code>demo</code>）：故障變多、修理變快，錄影展示時幾十秒內就能看到告警開、關的完整過程。</p>
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>這個 Spring 的「profile」就像 ASP.NET Core 的 <code>ASPNETCORE_ENVIRONMENT</code>：設成 <code>demo</code> 時，會多讀 <code>application-demo.yaml</code> 覆蓋預設值，就像多讀 <code>appsettings.Demo.json</code>。</p></div>
+
+<h3>回報「修好了」之前先問真正的狀態</h3>
+<p>還有一個更像真實世界的改動。以前模擬器一到時間就宣告「修好了」，但如果操作員剛好已經在操作台按了 Recover，這個宣告就會和現況衝突。現在它宣告之前，會先問 equipment-service 這台機台現在是不是還在 DOWN：</p>
+<ul>
+<li>還是 DOWN：照常宣告修好，有機率閃斷。</li>
+<li>已經被人救回來了：什麼都不說，繼續工作。</li>
+<li>問不到（服務暫時連不上）：保持 DOWN，下一個 tick 再問，不亂猜。</li>
+</ul>
+<p>這和前面「啟動時對齊」是同一個原則：有本地記憶的元件，在做會影響別人的動作之前，先跟真實來源核對。</p>
 
 <h2>啟動順序提醒</h2>
 <p>RabbitMQ → lot-service、equipment-service → 註冊機台 → 模擬器。原因見前一篇：queue 是消費者宣告的，模擬器太早發訊息會沒有人接。</p>

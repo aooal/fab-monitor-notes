@@ -25,7 +25,7 @@
 
 <div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
 <div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
-  <div class="eyebrow"><i></i>第 07 篇 / 共 11 篇</div>
+  <div class="eyebrow"><i></i>第 07 篇 / 共 12 篇</div>
   <h1><span class="grad">第 3 週（一）：alarm-service，用規則把事件變成告警</span></h1>
   <div class="meta"><span>約 10 分鐘</span><span class="tag">告警</span><span class="tag">策略模式</span><span class="tag">PostgreSQL</span></div>
 </div></div>
@@ -37,7 +37,7 @@
 <ul>
 <li>機台變成 <code>DOWN</code> 時，產生一筆 <code>OPEN</code> 告警。</li>
 <li>操作員看到後按「確認」，告警變成 <code>ACKNOWLEDGED</code>（代表有人接手，不代表機台已修好）。</li>
-<li>機台離開 <code>DOWN</code>（恢復）時，告警自動變成 <code>CLOSED</code>，不論有沒有人確認過。</li>
+<li>機台離開 <code>DOWN</code>（恢復）時，告警自動變成 <code>CLOSED</code>，不論有沒有人確認過，並記下「是系統關的」。</li>
 <li>同一台機台同時只能有一筆「進行中」的同類告警，重複送來的 DOWN 不能產生第二筆。</li>
 </ul>
 
@@ -47,9 +47,25 @@
 <tbody>
 <tr><td><code>OPEN</code></td><td>已發生，還沒有人看過</td><td>規則被觸發</td></tr>
 <tr><td><code>ACKNOWLEDGED</code></td><td>有人看過並接手，原因可能還在</td><td>操作員按確認（只能從 OPEN 確認）</td></tr>
-<tr><td><code>CLOSED</code></td><td>原因消失</td><td>機台恢復，系統自動關閉</td></tr>
+<tr><td><code>CLOSED</code></td><td>原因消失</td><td>機台恢復，系統自動關閉（記錄 <code>closedBy = SYSTEM</code>）</td></tr>
 </tbody></table>
 <p>把「有人看過」和「問題解決」分成兩個狀態很重要：值班的人要知道哪些告警已經有人處理，但也不能因為按了確認，就以為機台好了。</p>
+
+<h2>誰關的？有沒有人看過？</h2>
+<p>上線測試一段時間後我發現一個缺口：機台恢復時告警自動變成 <code>CLOSED</code>，但從結果看不出這筆告警是「有人處理過才關」，還是「根本沒人看到，機台自己好了」。對值班的人來說，第二種最值得回頭檢討（下班時段、漏看、告警太吵）。</p>
+<p>我考慮過新增第四個狀態，例如 <code>MISSED</code>，最後選擇<strong>不加狀態，只加欄位</strong>：</p>
+<table>
+<thead><tr><th>做法</th><th>問題</th></tr></thead>
+<tbody>
+<tr><td>新增狀態 <code>MISSED</code></td><td>每個判斷狀態的地方、部分唯一索引、API 與前端都要跟著改；而且一筆告警「被確認過又被關閉」的事實會消失。</td></tr>
+<tr><td><strong>新增 <code>closed_by</code> 欄位</strong>（採用）</td><td>狀態維持三個。「沒人看過就關了」可以由 <code>status = CLOSED</code> 且 <code>acknowledgedAt</code> 為空推導出來，不必另外儲存。</td></tr>
+</tbody></table>
+<p>資料庫再加一條檢查約束：<code>closed_by</code> 只有在狀態是 <code>CLOSED</code> 時才有值，其他狀態一定是空的，程式寫錯時資料庫會擋下來。而且系統自動關閉<strong>不會</strong>寫入確認人，確認永遠是人的動作。</p>
+<pre><code data-lang="java">public boolean closedWithoutAcknowledgement() {
+    return status == AlarmStatus.CLOSED &amp;&amp; acknowledgedAt == null;
+}</code></pre>
+<p>操作台因此能畫出三種結果：進行中的告警，已關閉且有人處理過（綠色 Acknowledged），已關閉但沒人看過（黃色 Missed），另有一個專門列出 Missed 的檢視，滑鼠移上去還會顯示是誰關的。</p>
+<div class="callout tip"><b class="t">一個設計原則</b><p>能從現有欄位推導出來的事實，就不要再存成一份獨立的狀態，否則兩份資料遲早會不一致。想要快速查詢時，再考慮加索引或檢視。</p></div>
 
 <h2>規則：一個介面，一個實作一種告警</h2>
 <p>「什麼情況要開告警」會一直增加（機台當機、溫度過高、連續失敗……），所以我不把判斷寫死在服務裡，而是做成一個介面，每種告警一個實作，這就是策略模式（Strategy）：</p>
@@ -108,7 +124,7 @@ public void onStatusChanged(UUID eventId, EquipmentStatusChange change) {
 <p>順帶一提，這也順便碰到了第 7 篇提過的「啟動順序」限制：如果 alarm-service 還沒啟動過，它的 queue 還不存在，先發出去的事件就會消失。解法一樣是先啟動所有消費者，之後會用 Outbox 模式根本解決。</p>
 
 <h2>測試</h2>
-<p>alarm-service 共 45 個測試：規則本身的單元測試、告警狀態轉換、應用層用假的 repository 測流程、ArchUnit 守分層、監聽器的失敗分類，以及用 Testcontainers 啟動真的 PostgreSQL 做的資料庫整合測試。</p>
+<p>alarm-service 共 49 個測試：規則本身的單元測試、告警狀態轉換（含「誰關的」與「沒人看過就關閉」）、應用層用假的 repository 測流程、ArchUnit 守分層、監聽器的失敗分類，以及用 Testcontainers 啟動真的 PostgreSQL 做的資料庫整合測試。</p>
 
 <h2>如何手動驗證</h2>
 <ol>

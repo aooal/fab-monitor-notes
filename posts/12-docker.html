@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 4 週：Docker、compose 與 CI，一行指令跑起整個系統 · Fab Monitor 開發筆記</title>
+<meta name="description" content="兩階段 Dockerfile、只開三個對外的門、用健康檢查決定啟動順序、一個看起來像錯誤的資料庫 log,以及把映像檔推到 GHCR。">
+<link rel="icon" href="../assets/avatar-sm.jpg">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#lab">互動</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <a href="../index.html#resume" class="hide-m">履歷</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 10 篇 / 共 12 篇</div>
+  <h1><span class="grad">第 4 週：Docker、compose 與 CI，一行指令跑起整個系統</span></h1>
+  <div class="meta"><span>約 10 分鐘</span><span class="tag">Docker</span><span class="tag">docker compose</span><span class="tag">CI</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>第 4 週的目標很單純：讓任何人在乾淨的電腦上，用一行指令就能把整個系統跑起來。前三週我都是在 IDE 裡一個一個服務啟動，這週把它們全部放進容器。這篇記錄 Dockerfile 的寫法、docker compose 怎麼安排啟動順序與對外的門，以及一個看起來像錯誤、其實是我自己設定問題的 log。</p>
+
+<h2>一行指令</h2>
+<pre><code data-lang="powershell">docker compose up --build</code></pre>
+<p>第一次要下載依賴，需要幾分鐘；之後有快取，很快。啟動後開 <code>http://localhost:8088</code> 就是操作台。所有模擬資料都是虛構的，資料庫與訊息佇列的密碼也只是開發用的假值，檔案開頭有註明不要拿去別處用。</p>
+
+<h2>Dockerfile：分成兩階段</h2>
+<p>每個 Java 服務的 Dockerfile 都是同一個形狀：</p>
+<pre><code data-lang="dockerfile"># 階段一:用 JDK 編譯(含 Maven 快取)
+FROM eclipse-temurin:21-jdk AS build
+RUN --mount=type=cache,target=/root/.m2 ./mvnw -q package -DskipTests
+
+# 階段二:只留執行需要的 JRE 與 jar
+FROM eclipse-temurin:21-jre
+RUN useradd --system app
+USER app
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]</code></pre>
+<ul>
+<li><strong>兩階段</strong>：編譯需要 JDK 與一堆原始碼，執行只需要 JRE 與一個 jar。最後的映像檔只含後者，更小、攻擊面也更小。</li>
+<li><strong>快取掛載</strong>：Maven 下載過的依賴放在建置快取裡，改一行程式不用重新下載全部。</li>
+<li><strong>非 root 使用者</strong>：容器裡的程式不需要管理員權限，萬一被入侵，能做的事也少一些。</li>
+<li><strong><code>MaxRAMPercentage=75</code></strong>：告訴 JVM 用容器記憶體上限的 75% 當堆積上限。不設的話，舊版 JVM 會以為整台機器的記憶體都能用，容易在容器裡被系統殺掉。</li>
+</ul>
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>兩階段建置就像 .NET 的 <code>mcr.microsoft.com/dotnet/sdk</code> 編譯、再複製到 <code>aspnet</code> 執行映像檔。概念完全一樣，只是名字不同。</p></div>
+<p>前端操作台則是先用 Node 建置出靜態檔，再放進 nginx 提供。API 的網址是在建置時用參數 <code>VITE_API_BASE</code> 寫進去的，因為靜態檔跑在瀏覽器，沒有環境變數可以讀。</p>
+
+<h2>docker compose：誰能被看見，誰要先起來</h2>
+<h3>只開三個門</h3>
+<p>整套系統在 compose 的內部網路裡，服務之間用名稱互相呼叫（例如 <code>http://equipment-service:8082</code>）。對外只開三個埠：閘道 8080、操作台 8088、RabbitMQ 管理頁 15672。資料庫與各服務都不對外，想用 API 一律走閘道，所以角色規則（第 9 篇）不會被繞過。</p>
+
+<h3>啟動順序：用健康檢查，不要用「先後順序」</h3>
+<p>第 3 篇提過 queue 由消費者宣告，消費者還沒啟動就送出的事件會消失。在 compose 裡的解法是 <code>depends_on</code> 加上<strong>健康檢查</strong>（healthcheck）：</p>
+<pre><code data-lang="yaml">equipment-service:
+  depends_on:
+    alarm-service: { condition: service_healthy }
+    postgres:      { condition: service_healthy }</code></pre>
+<p>「容器已啟動」不等於「服務準備好了」。<code>condition: service_healthy</code> 會等到健康檢查通過才啟動下一個，所以 alarm-service 先宣告好它的 queue，事件才不會掉。</p>
+
+<h3>種子工作與選用的模擬器</h3>
+<p>一個一次性的 <code>seed</code> 容器會透過閘道註冊三台機台，做完就結束；模擬器放在 <code>simulator</code> 這個 profile 裡，要加 <code>--profile simulator</code> 才會啟動。這樣預設是一個安靜、可以手動操作的系統，需要熱鬧時再開模擬器。另外還保留 <code>deploy/docker-compose.yml</code>，只含基礎設施（資料庫與 RabbitMQ），給在 IDE 裡開發的人用。兩份 compose 用同樣的埠，不要同時跑。</p>
+
+<h2>一個看起來像錯誤的 log</h2>
+<p>系統跑起來後，資料庫容器的 log 每隔幾秒就出現一行：</p>
+<pre><code>FATAL:  database "fab" does not exist</code></pre>
+<p>看起來很嚴重，但服務一切正常。原因是我的健康檢查寫成 <code>pg_isready -U fab</code>。沒指定資料庫時，它預設會連到和使用者同名的資料庫 <code>fab</code>，而這個資料庫根本不存在（每個服務各有自己的資料庫名稱）。連線被拒，於是在 log 裡留下 FATAL，但 <code>pg_isready</code> 本身仍然回報「資料庫可連線」，所以才不會影響健康判斷。</p>
+<p>修法是把資料庫名稱也寫進去：<code>pg_isready -U fab -d $${POSTGRES_DB}</code>（雙錢字號是讓 compose 不要自己展開，而是交給容器裡的 shell）。</p>
+<div class="callout warn"><b class="t">這次學到的</b><p>看到 FATAL 先不要慌，也不要直接忽略。先確認服務有沒有真的受影響，再去找是誰在製造這行 log。很多時候是自己的監控工具造成的雜訊，但雜訊多了，真正的錯誤就容易被蓋住。</p></div>
+
+<h2>CI：把映像檔推到 GHCR</h2>
+<p>新增的 GitHub Actions 工作流程會在每次變更時為七個元件（六個服務加操作台）建置映像檔；只有推到 <code>main</code> 時才會推到 GitHub 的容器登錄服務 <code>ghcr.io</code>，PR 只建置、不推送。這也是第 5 週用 Kubernetes 和第 6 週做 CD 的前提：部署的來源是已經建好、有版本標記的映像檔，而不是原始碼。</p>
+
+<h2>如何驗證</h2>
+<ol>
+<li><code>docker compose up --build</code>，等到看見 <code>Seed done.</code>。</li>
+<li>開 <code>http://localhost:8088</code>，用 <code>admin</code> 登入，能看到三台機台。</li>
+<li>執行 <code>scripts/demo.ps1</code>，它會依序走過登入、查詢、改狀態、告警確認，全部 ok 即通過。</li>
+<li><code>docker compose --profile simulator up -d</code> 加入模擬器，觀察機台自己跑起來。</li>
+<li>停止：<code>docker compose --profile simulator down</code>（資料保留；加 <code>-v</code> 連資料一起刪除）。</li>
+</ol>
+
+<div class="post-nav"><a class="prev" href="09-gateway.html"><small>← 上一篇</small>第 3 週（三）：api‑gateway 與操作台</a><a class="next" href="10-pitfalls.html"><small>下一篇 →</small>問題與解法：開發中遇到的七個狀況</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
+  <p class="by"><img src="../assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="512" height="512">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+<script src="../assets/widgets.js"></script>
+</body></html>
