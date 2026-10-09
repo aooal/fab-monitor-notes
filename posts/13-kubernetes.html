@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 5 週：Kubernetes 與 Helm，讓系統自己修復、滾動更新與擴縮 · Fab Monitor 開發筆記</title>
+<meta name="description" content="kind 本機叢集、探針與 init container、滾動更新擋下壞版本、HPA 自動擴縮、把 JWT 金鑰放進 Secret,以及用 Helm 打包與回滾。">
+<link rel="icon" href="../assets/avatar-sm.jpg">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#lab">互動</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <a href="../index.html#resume" class="hide-m">履歷</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 11 篇 / 共 13 篇</div>
+  <h1><span class="grad">第 5 週：Kubernetes 與 Helm，讓系統自己修復、滾動更新與擴縮</span></h1>
+  <div class="meta"><span>約 13 分鐘</span><span class="tag">Kubernetes</span><span class="tag">Helm</span><span class="tag">kind</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>第 4 週之後，整個系統可以用 <code>docker compose up</code> 跑起來。但 compose 只回答「怎麼啟動」，沒有回答「它掛了怎麼辦、流量變大怎麼辦、要換新版本怎麼辦」。第 5 週我把系統搬到 Kubernetes（本機用 kind 跑一個叢集），再用 Helm 打包。這篇記錄每一步學到的概念、我踩到的坑，以及哪些設計是為了日後可以搬到 Azure AKS。</p>
+
+<h2>Kubernetes 在做什麼</h2>
+<p>一句話：你<strong>宣告</strong>「我要這個映像檔跑 2 份」，Kubernetes 就持續地讓現實符合宣告。pod 掛了它重建，節點掛了它搬家，你改了宣告它慢慢換過去。它不處理資料的佇列順序（那是 RabbitMQ 的事），也不只是流量分配；流量分配只是其中一個功能（Service）。</p>
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>Deployment 像是「保證這個程序永遠有 N 個在跑的 Windows 服務管理員」；Service 像是這 N 個程序前面的內部負載平衡器加一個固定的主機名稱；ConfigMap 與 Secret 像 <code>appsettings.json</code> 與 Key Vault 的參照。</p></div>
+
+<h2>本機叢集：kind</h2>
+<p>kind（Kubernetes in Docker）用 Docker 容器當作叢集的節點，免費、一分鐘建好、刪掉也乾淨。我選它而不是直接上 AKS，是因為 Kubernetes 的物件（Deployment、Service、Secret）在各家雲端都一樣，<strong>可以移植的是 YAML 與 Helm chart</strong>，不可移植的只有叢集本身。每個環境不同的部分（流量怎麼進來、儲存類型、映像檔從哪來、密碼從哪來）我都放在 values 檔裡，以後要上 AKS 只需要多一個 <code>values-aks.yaml</code>。</p>
+<p>kind 的設定檔 <code>deploy/kind-cluster.yaml</code> 做了一件事：把你電腦的 8080、8088、15672 埠對應到叢集節點的 30080、30088、30672，這樣瀏覽器才連得到叢集裡的服務。這是整個專案唯一 kind 專屬的檔案。</p>
+<p>映像檔不是從 ghcr.io 下載，而是用 <code>kind load docker-image</code> 手動塞進節點，所以每個 Deployment 都設 <code>imagePullPolicy: IfNotPresent</code>。沒這行的話，<code>:latest</code> 標籤會讓 Kubernetes 每次都想去網路上下載，而本機建出來的映像檔根本不在網路上，結果是 <code>ErrImagePull</code>。我也真的忘記 load 過一次，看到了這個錯誤。</p>
+
+<h2>步驟一：把系統放進叢集</h2>
+<ul>
+<li><strong>Deployment + Service</strong>：每個 Java 服務一組。Service 給它一個固定的 DNS 名稱，例如 <code>http://alarm-service:8083</code>，所以服務之間的呼叫方式跟 compose 一樣。</li>
+<li><strong>StatefulSet + PVC</strong>：四個 PostgreSQL。資料庫不能用一般 Deployment，因為它需要穩定的名字和自己的磁碟，pod 重建後磁碟還要接得回來。</li>
+<li><strong>Secret 與 ConfigMap</strong>：密碼放 Secret，不是機密的設定（例如各服務的網址）放 ConfigMap，改設定不用重建映像檔。</li>
+<li><strong>NodePort</strong>：閘道、操作台和 RabbitMQ 管理頁開一個節點上的埠給外面連，其餘服務只有叢集內看得到，和 compose 只開三個門的設計一致。</li>
+<li><strong>種子工作（Job）</strong>：一次性地註冊三台機台，跑完就結束。</li>
+</ul>
+
+<h3>坑一：lot-service 一直 CrashLoopBackOff</h3>
+<p>log 的錯誤是 <code>NumberFormatException: For input string: "tcp://10.96.x.x:5672"</code>。原因很有趣：Kubernetes 預設會為同一個 namespace 的每個 Service 注入一組環境變數，名字像 <code>RABBITMQ_PORT=tcp://10.96.1.5:5672</code>。而 Spring 會把環境變數 <code>RABBITMQ_PORT</code> 當作 <code>spring.rabbitmq.port</code> 去讀，期待是數字，結果拿到一串網址就當場失敗。</p>
+<p>解法是在每個 pod 上設 <code>enableServiceLinks: false</code>，不要注入這些變數；服務本來就是靠 DNS 名稱找彼此，不需要它們。</p>
+<div class="callout warn"><b class="t">這次學到的</b><p>程式碼和設定都沒錯，是平台「好心」多給了東西。遇到只在叢集裡才出現的問題，先看 <code>kubectl logs</code> 和 <code>kubectl describe pod</code>，再想想環境和本機有哪裡不同。</p></div>
+
+<h3>坑二：種子工作拿到 HTTP 500</h3>
+<p>種子 Job 一啟動就呼叫閘道，但 equipment-service 還沒準備好，閘道便回傳 500。compose 用 <code>depends_on</code> 解決這個問題，Kubernetes 沒有這個東西。見下一節。</p>
+
+<h2>步驟二：探針與啟動順序</h2>
+<p>Spring Boot 的 Actuator 提供兩個端點：<code>/actuator/health/liveness</code>（程序還活著嗎）和 <code>/actuator/health/readiness</code>（現在能接流量嗎）。Kubernetes 用三種探針去問它們：</p>
+<ul>
+<li><strong>startupProbe</strong>：JVM 啟動很慢。在它成功之前，其他兩種探針不會執行，所以慢啟動不會被誤判為當機（我給了 30 次 × 5 秒 = 150 秒）。</li>
+<li><strong>livenessProbe</strong>：連續失敗就<strong>重啟容器</strong>。處理「卡死了」。</li>
+<li><strong>readinessProbe</strong>：失敗就把這個 pod 從 Service 的名單裡拿掉，但<strong>不重啟</strong>。處理「暫時忙不過來，或還沒準備好」。</li>
+</ul>
+<p>啟動順序則用 <strong>init container</strong>：在主容器之前先跑的小容器，必須成功才會往下。equipment-service 的 init container 會一直 <code>curl</code> alarm-service 的 readiness 端點，直到通過為止，保證 alarm-service 已經宣告好它的 queue（第 3 篇提過的事件消失問題）。種子 Job 也一樣，先等 equipment-service 就緒再註冊機台。</p>
+<p>我也做了「自癒」實驗：手動刪掉一個 pod，Deployment 立刻補上新的，服務不中斷。</p>
+
+<h2>步驟三：滾動更新、回滾與自動擴縮</h2>
+<h3>滾動更新</h3>
+<p>設定是 <code>maxSurge: 1, maxUnavailable: 0</code>：更新時先多開一個新 pod，等它 ready 了，才關一個舊的，任何時刻可用的 pod 數都不會少於目標。我故意把映像檔改成一個不存在的版本，新 pod 卡在 <code>ErrImagePull</code>，舊 pod 始終留著繼續服務，系統沒有任何中斷。然後 <code>kubectl rollout undo</code> 一個指令回到好的版本。這是滾動更新最有價值的地方：<strong>壞版本推不出去</strong>。</p>
+
+<h3>HPA：依 CPU 自動增減</h3>
+<p>HorizontalPodAutoscaler 會比較 lot-service 目前的平均 CPU 用量與「它要求的量」（requests.cpu = 200m）。公式是：</p>
+<pre><code>期望份數 = ceil( 目前份數 × 目前平均用量 / 目標 )</code></pre>
+<p>目標設 50%。我用一個小 pod 對 lot-service 持續發請求，CPU 衝高，份數從 1 變 3（上限）；移除壓力後，等了穩定視窗（demo 為了好觀察縮短到 60 秒）才逐步縮回來，避免來回震盪。它需要叢集裡裝 metrics-server 才拿得到用量，kind 要加 <code>--kubelet-insecure-tls</code>（只限本機）。</p>
+<div class="callout tip"><b class="t">小細節</b><p>有 HPA 的 Deployment 不能自己寫 <code>replicas</code>。否則每次 <code>apply</code> 都會把份數重設回去，和 HPA 打架。</p></div>
+
+<h2>步驟四：JWT 簽章金鑰放進 Secret</h2>
+<p>第 8 篇的 auth-service 在啟動時產生一把<strong>臨時</strong>的 RSA 金鑰來簽 JWT。單一容器沒問題；但放進 Kubernetes 就有兩個問題：</p>
+<ul>
+<li>想跑兩份時，每個 pod 各簽各的，使用者的 token 打到另一個 pod 就驗證失敗。</li>
+<li>pod 重啟或滾動更新時，金鑰跟著消失，所有人的 token 一次失效。</li>
+</ul>
+<p>解法是讓金鑰獨立於 pod 的生命週期：用 <code>scripts/make-jwt-secret.ps1</code> 在本機產生私鑰（<code>.secrets/</code>，已被 Git 忽略），建成叢集裡的 Secret <code>jwt-key</code>，以檔案形式掛進 pod，auth-service 透過環境變數 <code>AUTH_JWT_PRIVATE_KEY_PATH</code> 讀它。因為 key id 是公鑰的指紋，同一把金鑰在所有 pod 算出來都一樣，閘道抓到的公鑰集合也一致。</p>
+<p>驗證方式很直觀：登入操作台，執行 <code>kubectl rollout restart deployment/auth-service</code>，畫面不用重新登入，資料持續更新。以前這會把所有人踢出去。</p>
+<div class="callout warn"><b class="t">私鑰不能進 Git</b><p>這個 Secret 刻意不放進任何 YAML 或 chart，由腳本在本機建立。資料庫與 RabbitMQ 的密碼雖然也在 Secret，但那是虛構的開發值；真正的系統會從 Key Vault 這類金鑰管理服務取得。</p></div>
+<p>已知的小風險：兩個 pod 同時對一個全新的資料庫建立第一批帳號，可能互相搶，輸的那個會重啟一次後恢復。正確做法是資料庫層的唯一約束加上略過重複，列入待辦。</p>
+
+<h2>步驟五：用 Helm 打包</h2>
+<p>到這裡有十幾個 YAML，而且很多地方是複製貼上：四個資料庫幾乎一樣，每個服務都有同樣的探針與更新策略。Helm 是 Kubernetes 的套件管理員，<strong>chart</strong> 是樣板加預設值，<strong>values 檔</strong>是各環境覆寫。對 .NET 開發者來說，像是 NuGet 套件加上 <code>appsettings.{Environment}.json</code>。</p>
+<ul>
+<li><code>values.yaml</code> 放預設（映像檔、份數、資源、HPA 開關）；<code>values-kind.yaml</code> 只放本機差異，也就是三個 NodePort。</li>
+<li>四個資料庫用一個 <code>range</code> 迴圈從設定產生，不再有四份複製貼上的檔案。</li>
+<li>共用片段放在 <code>_helpers.tpl</code>：探針、更新策略、RabbitMQ 連線、「等待另一個服務」的 init container。</li>
+<li>閘道 Deployment 帶著 ConfigMap 的雜湊值（<code>checksum/config</code>）。ConfigMap 變了，pod 範本也跟著變，<code>helm upgrade</code> 才會真的重啟閘道。</li>
+<li>種子 Job 是 Helm hook（安裝與升級後執行，下次執行前先刪掉舊的）。Job 建好之後不能修改，不這樣做，第二次 <code>helm upgrade</code> 就會失敗。</li>
+<li>命名空間與 <code>jwt-key</code> 不在 chart 裡。</li>
+</ul>
+<pre><code data-lang="powershell">helm lint deploy/helm/fab-monitor -f deploy/helm/values-kind.yaml
+helm template fab deploy/helm/fab-monitor -n fab -f deploy/helm/values-kind.yaml
+helm install fab deploy/helm/fab-monitor -n fab -f deploy/helm/values-kind.yaml</code></pre>
+<p><code>helm template</code> 只把樣板展開成最終 YAML 而不安裝，是檢查 chart 最安全的方式。我展開後得到 28 個物件，與原本手寫的清單一一對得上。</p>
+
+<h3>升級與回滾</h3>
+<pre><code data-lang="powershell">helm upgrade fab deploy/helm/fab-monitor -n fab -f deploy/helm/values-kind.yaml --set gateway.replicas=3
+helm history fab -n fab
+helm rollback fab 1 -n fab</code></pre>
+<p>升級後閘道從 2 份變 3 份，只多了一個 pod，其他完全沒動。<code>helm history</code> 列出每個版本，<code>helm rollback</code> 回到第 1 版時並不是倒帶，而是<strong>新增</strong>第 3 版（內容等於第 1 版），歷史永遠只增不減。與 <code>kubectl rollout undo</code> 相比，Helm 回滾的是整個 release：份數、ConfigMap、Service、HPA，不只是一個 Deployment。</p>
+
+<h2>已知的限制</h2>
+<ul>
+<li>服務不會等自己的資料庫，冷啟動時有些 pod 會重啟一次，然後恢復。</li>
+<li>映像檔還是手動 <code>kind load</code>；上雲端時要改從 ghcr.io 或 ACR 拉。</li>
+<li>沒有 Ingress，只有 NodePort。</li>
+<li>密碼仍在 values 裡（虛構值）。</li>
+</ul>
+<p>這些都寫進了 ADR 0006。第 6 週的目標，是讓 CI 在拋棄式的 kind 叢集上用 Helm 安裝整個系統，再加上 Prometheus 與 Grafana 看板。</p>
+
+<h2>如何驗證</h2>
+<ol>
+<li>建叢集、<code>kind load</code> 全部映像檔、<code>.\scripts\make-jwt-secret.ps1</code>、<code>helm install</code>，等所有 pod 變 <code>Running</code>、種子 Job 為 <code>Completed</code>。</li>
+<li>開 <code>http://localhost:8088</code> 登入，看到三台機台。</li>
+<li><code>kubectl delete pod</code> 刪一個服務的 pod，確認新的自動補上。</li>
+<li><code>kubectl rollout restart deployment/auth-service -n fab</code>，確認操作台不用重新登入。</li>
+<li><code>helm upgrade --set gateway.replicas=3</code> 後 <code>helm rollback</code>，確認份數變回來。</li>
+</ol>
+
+<div class="post-nav"><a class="prev" href="12-docker.html"><small>← 上一篇</small>第 4 週：Docker、compose 與 CI，一行指令跑起整個系統</a><a class="next" href="10-pitfalls.html"><small>下一篇 →</small>問題與解法：開發中遇到的七個狀況</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
+  <p class="by"><img src="../assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="512" height="512">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+<script src="../assets/widgets.js"></script>
+</body></html>
