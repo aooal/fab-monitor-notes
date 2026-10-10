@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 6 週（二）：Prometheus 與 Grafana，看見有沒有人漏掉警報 · Fab Monitor 開發筆記</title>
+<meta name="description" content="指標怎麼從 Spring Boot 流到儀表板、從資料庫算出的警報業務指標、Kubernetes 上的服務探索、同一組檔案給 compose 與 Helm,以及跑起來後死信佇列被看見的那一刻。">
+<link rel="icon" href="../assets/avatar-sm.jpg">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#lab">互動</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <a href="../index.html#resume" class="hide-m">履歷</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 13 篇 / 共 15 篇</div>
+  <h1><span class="grad">第 6 週（二）：Prometheus 與 Grafana，看見有沒有人漏掉警報</span></h1>
+  <div class="meta"><span>約 12 分鐘</span><span class="tag">Prometheus</span><span class="tag">Grafana</span><span class="tag">可觀測性</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>系統能跑、能部署、能自動測試之後，還剩一個問題：<strong>它現在好不好？</strong>以前我只能讀 log、點操作台。第 6 週的第二件事，是讓系統把自己的狀態變成數字，再畫成儀表板。除了一般的 CPU、記憶體、請求數，我更想回答這個專案特有的問題：<strong>有沒有人漏掉警報？</strong>這篇記錄指標怎麼從 Spring Boot 流到畫面上、我設計了哪些指標，以及跑起來之後我看到的東西。</p>
+
+<h2>指標怎麼流動</h2>
+<p>三個角色各做一件事：</p>
+<ul>
+<li><strong>Micrometer</strong>：Spring Boot 裡收集指標的函式庫，服務把數字登記在它那裡。.NET 的類比是 <code>System.Diagnostics.Metrics</code> 搭配 OpenTelemetry exporter。</li>
+<li><strong>Prometheus</strong>：每 15 秒主動到各服務的 <code>/actuator/prometheus</code> <strong>拉</strong>一份文字格式的數字，存成時間序列。服務不需要知道 Prometheus 在哪，它掛了也不會拖累服務。</li>
+<li><strong>Grafana</strong>：只負責畫圖。它用查詢語言 PromQL 向 Prometheus 要資料，例如 <code>rate(...)</code> 算每秒速率、<code>max(...)</code> 取最大、<code>sum by (service)(...)</code> 依服務加總。</li>
+</ul>
+<p>指標有三種型態：<strong>gauge</strong> 是「現在的值」（會上下，例如目前的未確認警報數）；<strong>counter</strong> 是只會增加的累計值（例如請求總數）；<strong>histogram</strong> 把數值分桶統計，是算延遲百分位數用的。</p>
+
+<h2>服務端：加了什麼</h2>
+<p>四個沒有對外公開埠的服務（lot、equipment、alarm、auth）各加一個相依套件 <code>micrometer-registry-prometheus</code>，並在 <code>management.endpoints.web.exposure.include</code> 加上 <code>prometheus</code>。另外打開 HTTP 延遲的 histogram 分桶：</p>
+<pre><code data-lang="yaml">management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus</code></pre>
+<p>為什麼要分桶？每個 pod 自己算出的 p95 不能平均，兩個 pod 的 p95 平均起來不是整體的 p95。把原始分桶交給 Prometheus，它才能跨 pod 合併後再算 <code>histogram_quantile(0.95, ...)</code>。</p>
+
+<h2>業務指標：有沒有人漏掉警報</h2>
+<p>alarm-service 多了一個 <code>AlarmMetrics</code>，登記三個 gauge，每次 Prometheus 來抓，就去資料庫算一次：</p>
+<ul>
+<li><code>fab_alarms{status="OPEN|ACKNOWLEDGED|CLOSED"}</code>：各狀態有幾筆警報。</li>
+<li><code>fab_alarms_missed</code>：被系統自動關閉、但從來沒人確認過的警報。這建立在第 4 週加入的 <code>closedBy</code> 與「未經確認」欄位上。</li>
+<li><code>fab_alarms_oldest_open_age_seconds</code>：最久沒人處理的警報已經等了幾秒（沒有就是 0）。</li>
+</ul>
+<p>幾個設計決定：</p>
+<ul>
+<li><strong>從資料庫算，不在記憶體累加。</strong>如果在事件處理時對記憶體裡的計數器加一，服務重啟就歸零，多個 pod 各算各的。資料庫才是唯一的事實來源。</li>
+<li><strong>放在 infrastructure 層。</strong>這個類別緊貼著 JPA repository，domain 層完全不知道有指標這回事，六角架構的 ArchUnit 規則也不用改。</li>
+<li><strong>每個 pod 報同樣的全域數字。</strong>所以儀表板與規則用 <code>max</code> 而不是 <code>sum</code>，否則 alarm-service 擴成兩份，警報數就變兩倍。</li>
+<li><strong>資料庫連不上時回傳 NaN。</strong>圖上出現空隙，但這次抓取不會整個失敗。</li>
+</ul>
+<div class="callout tip"><b class="t">測試裡的一個小發現</b><p>跑整合測試時，日誌顯示「Exposing 2 endpoints」，而不是我預期的 3 個（少了 prometheus）。這不是 bug：<code>@SpringBootTest</code> 預設會關閉指標匯出，只留一個記憶體裡的 registry。所以測試能驗證「數字對不對」，但驗證不了「端點有沒有開」。後者要等服務真的啟動、被 Prometheus 抓到才知道。</p></div>
+
+<h2>Prometheus 怎麼找到服務</h2>
+<p>在 docker compose 裡，目標清單是手寫的（<code>lot-service:8081</code> 等四個）。在 Kubernetes 就不能這樣：pod 會增減、IP 會變。所以 chart 給 Prometheus 一個<strong>服務探索</strong>（service discovery）的設定：它向 Kubernetes API 問「這個 Service 背後有哪些 pod」，每個 pod 都自動變成一個抓取目標，並標上 <code>service</code> 與 <code>pod</code> 標籤。auth-service 跑兩份就會出現兩行，lot-service 被 HPA 擴到三份就三行。</p>
+<p>代價是 Prometheus 要有權限問 API。chart 為它建了一個 ServiceAccount、一個只能讀取 services、endpoints、pods 的 Role，而且只限這個 namespace，不是整個叢集。最小權限原則。</p>
+
+<h2>Grafana：儀表板放在 Git 裡</h2>
+<p>儀表板是一個 JSON 檔，用 Grafana 的 provisioning 機制在啟動時自動載入：資料來源與儀表板都由檔案決定，重啟不會消失，也不用手動點。更重要的是，<strong>compose 與 Helm chart 用的是同一組檔案</strong>（儀表板、告警規則、Grafana 設定），只有 Prometheus 的抓取設定不同。Helm 把它們放進 ConfigMap，compose 直接掛載。</p>
+<p>儀表板上有 12 個圖，上排六個大數字：未確認警報、最久未處理、錯過的警報總數、服務在線數、死信佇列訊息數、進行中的警報；下面是警報狀態趨勢、請求率、5xx、p95 延遲、JVM 記憶體與 CPU。</p>
+
+<h2>告警規則</h2>
+<p>三條規則，寫在 Prometheus 裡，觸發時會出現在它的 Alerts 頁：</p>
+<ul>
+<li><code>ServiceDown</code>：某個服務連續一分鐘抓不到。</li>
+<li><code>AlarmNotAcknowledgedTooLong</code>：最老的 OPEN 警報超過 5 分鐘沒人確認。</li>
+<li><code>DeadLetterMessages</code>：任何死信佇列裡有訊息。</li>
+</ul>
+<p>這裡沒有 Alertmanager，所以不會通知任何人。一個模擬專案沒有人需要被通知，我把這個取捨寫進了 ADR 0007。</p>
+
+<h2>跑起來的樣子</h2>
+<p>用 <code>docker compose --profile monitoring --profile simulator up</code> 啟動，模擬器用 demo 設定讓機台頻繁故障又修好。</p>
+<figure class="shot"><img src="../assets/img/prom-targets.webp" alt="Prometheus 的 Targets 頁:fab-services 四個目標與 rabbitmq 一個目標全部是 UP" loading="lazy"><figcaption>Prometheus 的 Targets 頁：四個服務和 RabbitMQ 都是 UP。</figcaption></figure>
+<p>這張圖只有在<strong>服務真的發出指標</strong>時才會是綠色。連 RabbitMQ 的外掛也確實有開（我原本不確定官方映像預設有沒有啟用）。</p>
+<figure class="shot"><img src="../assets/img/console-down-alarm.webp" alt="操作台:機台 EQP-ETCH-01 為 DOWN,警報列表中有一筆 OPEN 的警報等待確認" loading="lazy"><figcaption>操作台：EQP-ETCH-01 當機，產生一筆 OPEN 警報，還沒有人確認。</figcaption></figure>
+<figure class="shot"><img src="../assets/img/grafana-open-alarm.webp" alt="Grafana 儀表板:未確認警報為 1(橘色)、進行中警報為 1" loading="lazy"><figcaption>同一時間的 Grafana：「未確認警報」是 1、「進行中警報」是 1，兩邊對得上。</figcaption></figure>
+<p>在操作台按下 Acknowledge 之後，Grafana 的數字隨之改變：</p>
+<figure class="shot"><img src="../assets/img/grafana-after-ack.webp" alt="Grafana 儀表板:未確認警報歸零、進行中警報歸零、錯過的警報累計 39" loading="lazy"><figcaption>確認之後：未確認與進行中都回到 0（綠色）。「錯過的警報」累計 39 筆，因為 demo 模式的機台故障又自動修好得很快，多半來不及有人確認。</figcaption></figure>
+<p>最有趣的是這張：</p>
+<figure class="shot"><img src="../assets/img/prom-alert-dlq.webp" alt="Prometheus Alerts 頁:DeadLetterMessages 為 FIRING,數值 2" loading="lazy"><figcaption>DeadLetterMessages 規則觸發：死信佇列裡有 2 則訊息。</figcaption></figure>
+<p>儀表板上的「Dead-letter messages」是紅色的 2，Alerts 頁的規則也跟著 Firing。這不是壞掉，而是規則找到了真的東西：第 2 篇與第 6 篇提過，模擬器會<strong>故意送出格式錯誤的訊息</strong>來測試死信佇列的路徑，業務錯誤不重試、直接進 dead-letter。這兩則應該就是它們，在 RabbitMQ 管理頁的 <code>*.dlq</code> 佇列可以看到內容。以前這些訊息悄悄躺在佇列裡，沒人知道；現在有數字、有顏色、有告警。這就是可觀測性的價值：不是為了畫漂亮的圖，而是讓「悄悄發生的事」被看見。</p>
+
+<h2>為什麼不把 Grafana 整合進操作台</h2>
+<p>我考慮過把監控畫面合併進 8088 的操作台，決定<strong>各自獨立</strong>。操作台給值班人員「處理事情」（確認警報、改狀態），Grafana 給維運與開發「看系統與趨勢」，兩種人要的畫面不同；Grafana 本身已是完整的產品（查詢、告警、權限、編輯），用 iframe 嵌入需要削弱它的安全設定，自己重畫則一定比它陽春；兩邊的登入系統也不同，整合要做單一登入，是另一個專案的規模；最後，「系統壞了還能看到哪裡壞」，所以監控不該依賴被監控的前端。折衷做法是在操作台標題列加一個連結，開新分頁到 Grafana。</p>
+
+<h2>刻意不做的事</h2>
+<ul>
+<li><strong>api-gateway 沒有被抓取。</strong>它的埠是對外公開的，開 <code>/actuator/prometheus</code> 等於把指標給所有人。正規作法是另開管理埠，而且不放進 Service，要連安全設定和探針一起改，風險較大，留到之後。所以儀表板上沒有閘道的 401/403 比率。</li>
+<li><strong>「警報太久沒人確認 → 升級」還沒做。</strong>現在只是 Prometheus 的告警規則。服務內的 <code>UnacknowledgedTooLongRule</code>（標記 escalated、避免重複升級）需要排程，仍在待辦。</li>
+<li><strong>沒有 Alertmanager、沒有歷史資料。</strong>Prometheus 與 Grafana 的資料放在 <code>emptyDir</code>，重啟就清空。</li>
+<li><strong>沒有 Kubernetes 本身的指標</strong>（pod 重啟次數、節點壓力），那需要 kube-state-metrics。</li>
+</ul>
+
+<h2>CI 也會檢查監控</h2>
+<p>第 14 篇的冒煙測試多了幾個檢查：用 <code>promtool</code> 驗證告警規則語法、用 <code>jq</code> 驗證儀表板 JSON，裝好 chart 後再問 Prometheus「有找到四個服務嗎？警報指標在嗎？」，問 Grafana「儀表板載入了嗎？連得到 Prometheus 嗎？」。監控壞了，CI 會紅燈。</p>
+
+<h2>如何驗證</h2>
+<ol>
+<li><code>docker compose --profile monitoring --profile simulator up --build -d</code>（PowerShell 先設 <code>$env:SIMULATOR_PROFILE="demo"</code>）。</li>
+<li>打開 <code>http://localhost:9090/targets</code>，四個服務與 RabbitMQ 都是 UP。</li>
+<li>打開 <code>http://localhost:3000</code>（不用登入），找 Fab Monitor 資料夾裡的儀表板。</li>
+<li>在操作台 <code>http://localhost:8088</code> 把機台設為 DOWN，看「未確認警報」變 1、「最久未處理」開始增加；按 Acknowledge，數字歸零。</li>
+<li>讓一個警報超過 5 分鐘不確認，<code>http://localhost:9090/alerts</code> 的 <code>AlarmNotAcknowledgedTooLong</code> 會變成 Firing。</li>
+</ol>
+
+<div class="post-nav"><a class="prev" href="14-ci-smoke.html"><small>← 上一篇</small>第 6 週（一）：CI 部署冒煙測試，每次都在新叢集上把系統裝起來</a><a class="next" href="10-pitfalls.html"><small>下一篇 →</small>問題與解法：開發中遇到的七個狀況</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
+  <p class="by"><img src="../assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="512" height="512">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+<script src="../assets/widgets.js"></script>
+</body></html>
