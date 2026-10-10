@@ -184,13 +184,18 @@
 
 <section class="block" id="resume"><div class="wrap">
   <h2 class="sec-title reveal">履歷</h2>
-  <div class="resume-slot reveal">
-    <div class="rs-icon" aria-hidden="true">📄</div>
+  <div class="resume-card reveal">
+    <button type="button" class="rc-thumb" data-cv-open aria-haspopup="dialog" aria-label="預覽履歷"><img src="assets/img/resume-thumb.webp" alt="履歷第 1 頁縮圖" width="380" height="537" loading="lazy"></button>
     <div>
-      <p><strong>整理中，專案完成後上線。</strong>等 Fab Monitor 六週計畫完成，我會依專案成果更新履歷，並放在這裡提供下載與線上閱讀。</p>
-      <div class="btns"><button type="button" class="btn" disabled aria-disabled="true">下載履歷 PDF（即將上線）</button></div>
+      <p><strong>陳翔暐 Shawn · 全端軟體工程師</strong></p>
+      <p>約 4 年開發經驗，以 C# / .NET 為主，近期用 Java / Spring Boot 完成 Fab Monitor。共 4 頁，可以直接在這裡預覽，或下載 PDF。</p>
+      <div class="btns"><button type="button" class="btn primary" data-cv-open aria-haspopup="dialog">預覽履歷</button><a class="btn" href="assets/Shawn-Chen-Resume.pdf" download>下載 PDF ↓</a></div>
     </div>
   </div>
+  <dialog id="cvDialog" class="cv-dialog" aria-labelledby="cvTitle">
+    <div class="cv-head"><h3 id="cvTitle">履歷預覽</h3><div class="cv-actions"><a class="btn small primary" href="assets/Shawn-Chen-Resume.pdf" download>下載 PDF ↓</a><button type="button" class="btn small ghost" id="cvClose" aria-label="關閉預覽">✕</button></div></div>
+    <div class="cv-body" id="cvBody" tabindex="0"><img src="assets/img/resume-1.webp" alt="履歷第 1 頁(共 4 頁)" width="1034" height="1462" loading="lazy"><img src="assets/img/resume-2.webp" alt="履歷第 2 頁(共 4 頁)" width="1034" height="1462" loading="lazy"><img src="assets/img/resume-3.webp" alt="履歷第 3 頁(共 4 頁)" width="1034" height="1462" loading="lazy"><img src="assets/img/resume-4.webp" alt="履歷第 4 頁(共 4 頁)" width="1034" height="1462" loading="lazy"></div>
+  </dialog>
 </div></section>
 
 <section class="block"><div class="wrap">

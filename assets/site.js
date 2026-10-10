@@ -131,6 +131,35 @@
     });
   }
 
+  // ----- resume preview dialog -----
+  var cvD = document.getElementById("cvDialog");
+  var cvOpeners = document.querySelectorAll("[data-cv-open]");
+  if (cvD && typeof cvD.showModal === "function") {
+    var cvLast = null;
+    cvOpeners.forEach(function (b) {
+      b.addEventListener("click", function () {
+        cvLast = b;
+        cvD.showModal();
+        document.body.classList.add("cv-open");
+        var body = document.getElementById("cvBody");
+        if (body) { body.scrollTop = 0; body.focus({ preventScroll: true }); }
+      });
+    });
+    var cvX = document.getElementById("cvClose");
+    if (cvX) cvX.addEventListener("click", function () { cvD.close(); });
+    // a click on the dim area outside the sheet (the dialog has no padding, so only the backdrop hits the dialog itself)
+    cvD.addEventListener("click", function (e) { if (e.target === cvD) cvD.close(); });
+    cvD.addEventListener("close", function () {
+      document.body.classList.remove("cv-open");
+      if (cvLast) cvLast.focus();
+    });
+  } else {
+    // very old browsers: just open the PDF
+    cvOpeners.forEach(function (b) {
+      b.addEventListener("click", function () { window.open("assets/Shawn-Chen-Resume.pdf", "_blank", "noopener"); });
+    });
+  }
+
   // ----- card spotlight -----
   document.querySelectorAll(".post-card").forEach(function (c) {
     c.addEventListener("mousemove", function (e) {
