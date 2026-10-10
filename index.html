@@ -165,7 +165,7 @@
     <div class="tl-item done reveal d2"><h3>第 3 週 · alarm-service、auth-service、api-gateway、操作台 <span class="tag done">完成</span></h3><p>機台 DOWN 時產生告警、恢復時關閉、可確認；RS256 JWT 與輪替的 refresh token；唯一的對外閘道與角色規則；Vue 3 操作台。</p></div>
     <div class="tl-item done reveal d3"><h3>第 4 週 · Docker 與 CI <span class="tag done">完成</span></h3><p>每個服務的 Dockerfile、一行指令啟動整個系統、CI 推映像檔到 GHCR；警報記錄「誰關的」並標出沒人處理的警報，模擬器改成更貼近真實的故障。</p></div>
     <div class="tl-item done reveal d1"><h3>第 5 週 · Kubernetes 與 Helm <span class="tag done">完成</span></h3><p>kind 本機叢集、探針與啟動順序、滾動更新與回滾、HPA 自動擴縮、JWT 簽章金鑰放進 Secret、Helm chart（install / upgrade / rollback）。</p></div>
-    <div class="tl-item now reveal d2"><h3>第 6 週 · CD、監控、文件 <span class="tag now">進行中</span></h3><p>已完成：CI 部署冒煙測試（拋棄式 kind 叢集 + Helm 安裝 + 登入與機台清單檢查）、Prometheus + Grafana 看板與告警規則（含「沒人確認的警報」指標）。接下來：README 架構圖與示範影片、警報升級規則、ADR 收尾。</p></div>
+    <div class="tl-item now reveal d2"><h3>第 6 週 · 部署驗證、監控、文件 <span class="tag now">進行中</span></h3><p>已完成：CI 部署冒煙測試（拋棄式 kind 叢集 + Helm 安裝 + 登入、升級與回滾）、Prometheus + Grafana 看板與告警規則、README 系統架構圖與 Quick start、修掉兩個已知限制（等資料庫、帳號競爭）、操作台的 Grafana 連結。刻意不做：自動上線（沒有正式環境）與服務內的警報升級。接下來：ADR 收尾。</p></div>
   </div>
 </div></section>
 
@@ -175,7 +175,7 @@
     <div>
       <h2 class="sec-title">關於作者</h2>
       <p><strong>Shawn Chen</strong> · 全端工程師，專注於 Web 系統與後端服務。</p>
-      <p>我對製造業的事件驅動系統很感興趣，因此做了 Fab Monitor，把微服務、訊息佇列、容器化與 CI/CD 實際串成一個完整的專案。這個網站是專案的設計說明，也是我的學習筆記。</p>
+      <p>我對製造業的事件驅動系統很感興趣，因此做了 Fab Monitor，把微服務、訊息佇列、容器化、Kubernetes 與 CI 部署驗證實際串成一個完整的專案。這個網站是專案的設計說明，也是我的學習筆記。</p>
       <div class="btns"><a class="btn" href="https://github.com/aooal">GitHub ↗</a><button type="button" class="btn" id="mailBtn" data-u="taboi40145" data-d="gmail.com">寄信給我 ✉</button></div>
       <div class="mail-info" id="mailInfo" hidden></div>
     </div>
@@ -196,7 +196,7 @@
 <section class="block"><div class="wrap">
   <h2 class="sec-title reveal">用到的技術</h2>
   <p class="sec-sub reveal">標示「規劃」的尚未實作。</p>
-  <div class="chips reveal"><span class="chip">Java 21</span><span class="chip">Spring Boot 4</span><span class="chip">Spring AMQP</span><span class="chip">RabbitMQ</span><span class="chip">PostgreSQL 17</span><span class="chip">Flyway</span><span class="chip">JPA / Hibernate</span><span class="chip">Spring Security</span><span class="chip">Spring Cloud Gateway</span><span class="chip">JWT (RS256)</span><span class="chip">Vue 3 / Vite / TypeScript</span><span class="chip">PrimeVue</span><span class="chip">Testcontainers</span><span class="chip">ArchUnit</span><span class="chip">JUnit</span><span class="chip">Maven</span><span class="chip">Docker</span><span class="chip">Docker Compose</span><span class="chip">Kubernetes (kind)</span><span class="chip">Helm</span><span class="chip">Micrometer</span><span class="chip">Prometheus</span><span class="chip">Grafana</span><span class="chip">GitHub Actions</span><span class="chip">ghcr.io</span><span class="chip">持續部署 CD（規劃）</span></div>
+  <div class="chips reveal"><span class="chip">Java 21</span><span class="chip">Spring Boot 4</span><span class="chip">Spring AMQP</span><span class="chip">RabbitMQ</span><span class="chip">PostgreSQL 17</span><span class="chip">Flyway</span><span class="chip">JPA / Hibernate</span><span class="chip">Spring Security</span><span class="chip">Spring Cloud Gateway</span><span class="chip">JWT (RS256)</span><span class="chip">Vue 3 / Vite / TypeScript</span><span class="chip">PrimeVue</span><span class="chip">Testcontainers</span><span class="chip">ArchUnit</span><span class="chip">JUnit</span><span class="chip">Maven</span><span class="chip">Docker</span><span class="chip">Docker Compose</span><span class="chip">Kubernetes (kind)</span><span class="chip">Helm</span><span class="chip">Micrometer</span><span class="chip">Prometheus</span><span class="chip">Grafana</span><span class="chip">GitHub Actions</span><span class="chip">ghcr.io</span></div>
 </div></section>
 
 <footer class="site-footer"><div class="wrap">

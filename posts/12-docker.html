@@ -80,7 +80,7 @@ ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]</code></pre>
 <div class="callout warn"><b class="t">這次學到的</b><p>看到 FATAL 先不要慌，也不要直接忽略。先確認服務有沒有真的受影響，再去找是誰在製造這行 log。很多時候是自己的監控工具造成的雜訊，但雜訊多了，真正的錯誤就容易被蓋住。</p></div>
 
 <h2>CI：把映像檔推到 GHCR</h2>
-<p>新增的 GitHub Actions 工作流程會在每次變更時為七個元件（六個服務加操作台）建置映像檔；只有推到 <code>main</code> 時才會推到 GitHub 的容器登錄服務 <code>ghcr.io</code>，PR 只建置、不推送。這也是第 5 週用 Kubernetes 和第 6 週做 CD 的前提：部署的來源是已經建好、有版本標記的映像檔，而不是原始碼。</p>
+<p>新增的 GitHub Actions 工作流程會在每次變更時為七個元件（六個服務加操作台）建置映像檔；只有推到 <code>main</code> 時才會推到 GitHub 的容器登錄服務 <code>ghcr.io</code>，PR 只建置、不推送。這也是第 5 週用 Kubernetes 和第 6 週做部署驗證的前提：部署的來源是已經建好、有版本標記的映像檔，而不是原始碼。</p>
 
 <h2>如何驗證</h2>
 <ol>
