@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 6 週（一）：CI 部署冒煙測試，每次都在新叢集上把系統裝起來 · Fab Monitor 開發筆記</title>
+<meta name="description" content="為什麼單元測試抓不到部署問題、冒煙測試的八個步驟、用 values-ci.yaml 配合小機器、把「換掉 auth-service 後 token 仍有效」變成自動檢查。">
+<link rel="icon" href="../assets/avatar-sm.jpg">
+<link rel="stylesheet" href="../assets/style.css">
+<script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div id="progress"></div>
+<header class="site-header"><div class="wrap">
+  <a class="brand" href="../index.html"><span class="brand-dot"></span>Fab Monitor 筆記</a>
+  <nav class="nav">
+    <a href="../index.html#architecture" class="hide-m">架構</a>
+    <a href="../index.html#posts">文章</a>
+    <a href="../index.html#lab">互動</a>
+    <a href="../index.html#roadmap" class="hide-m">進度</a>
+    <a href="../index.html#resume" class="hide-m">履歷</a>
+    <button class="theme-btn" id="themeBtn" aria-label="切換深淺色">☀</button>
+  </nav>
+</div></header>
+
+<div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
+<div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
+  <div class="eyebrow"><i></i>第 12 篇 / 共 14 篇</div>
+  <h1><span class="grad">第 6 週（一）：CI 部署冒煙測試，每次都在新叢集上把系統裝起來</span></h1>
+  <div class="meta"><span>約 9 分鐘</span><span class="tag">GitHub Actions</span><span class="tag">kind</span><span class="tag">Helm</span><span class="tag">CI</span></div>
+</div></div>
+<div class="layout">
+<article class="post">
+<p>第 5 週結束時，系統已經能用 Helm 裝進 Kubernetes，但有一個洞：這些東西全靠我在自己電腦上手動驗證。改了 <code>deploy/helm/**</code> 沒有任何自動檢查，<code>helm install</code> 會不會壞，要等下次手動跑才知道。第 6 週的第一件事，就是讓 GitHub Actions 每次都在一個全新的 Kubernetes 叢集上把整個系統裝起來、用一遍。這篇記錄它的原理、每一步的用意，以及它能抓到與抓不到的東西。</p>
+
+<h2>為什麼單元測試不夠</h2>
+<p>前幾週的 234 個測試測的是程式邏輯：狀態機、規則、API。但第 5 週我踩到的坑，幾乎沒有一個是這些測試能抓到的：lot-service 在叢集裡因為多出來的 <code>RABBITMQ_PORT=tcp://…</code> 環境變數而當掉；種子 Job 太早呼叫閘道拿到 500；auth-service 的金鑰各 pod 不一致。這些問題都出在「<strong>程式和環境接起來的地方</strong>」，而不是程式本身。所以需要一種測試，是把整個系統真的裝起來再檢查。</p>
+<div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>單元測試像測單一個類別；<code>WebApplicationFactory</code> 的整合測試是把一個服務整個啟動後打 HTTP。冒煙測試再往外一層：把<strong>整套系統加上部署設定</strong>一起啟動，再從外面打進去。GitHub Actions 的角色像 Azure Pipelines。</p></div>
+
+<h2>什麼是冒煙測試</h2>
+<p>名字來自電子硬體：新電路板接上電，先看會不會冒煙，不冒煙才值得往下測。軟體上一樣：不測細節，只確認「系統站得起來、主要流程通」。我的冒煙測試問的是：chart 裝得起來嗎？登入得了嗎？種子資料有進去嗎？換掉 auth-service 之後 token 還有效嗎？升級與回滾做得到嗎？</p>
+
+<h2>運作原理</h2>
+<p>GitHub Actions 每次執行會給你一台臨時的 Linux 虛擬機（runner），上面有 Docker，跑完就銷毀。所以流程和我在本機做的一模一樣，只是由機器代勞，而且每次都從零開始：</p>
+<ol>
+<li><strong>觸發</strong>：改了 <code>deploy/helm/**</code>、<code>deploy/kind-cluster.yaml</code>、<code>services/**</code>、<code>frontend/**</code> 或這個 workflow 本身就執行，也可以在網頁上手動執行。</li>
+<li><strong>建映像檔</strong>：六個映像檔用標籤 <code>:ci</code> 在 runner 上建好，不推到任何地方（權限只有 <code>contents: read</code>，不需要也不能推）。建置的快取與「Docker images」那條 workflow 共用，同一份程式碼不會建兩次。</li>
+<li><strong>建拋棄式叢集</strong>：用 <code>helm/kind-action</code> 搭配和本機同一份 <code>kind-cluster.yaml</code> 建 kind 叢集，再用 <code>kind load</code> 把映像檔塞進去。</li>
+<li><strong>建 JWT 金鑰 Secret</strong>：用 openssl 當場產生一把只屬於這次執行的金鑰。私鑰仍然不在 Git 裡，用完連 runner 一起消失。</li>
+<li><strong>安裝</strong>：先 <code>helm lint</code>，再 <code>helm install --wait</code>。<code>--wait</code> 會等所有 Deployment 與 StatefulSet 就緒，並等種子 Job（Helm hook）跑完才回傳。</li>
+<li><strong>冒煙測試</strong>：用 <code>curl</code> 像使用者一樣打：操作台首頁有回應；沒帶 token 打 <code>/api/alarms</code> 要得到 401；用 <code>admin</code> 登入拿 token；機台清單至少 3 台（證明種子 Job 有跑）；接著 <code>kubectl rollout restart</code> 把所有 auth-service pod 換掉，<strong>同一個 token</strong> 再打一次要得到 200。</li>
+<li><strong>升級與回滾</strong>：<code>helm upgrade --set gateway.replicas=2</code> 後檢查份數是 2，<code>helm rollback fab 1</code> 之後檢查變回 1。</li>
+<li><strong>失敗時</strong>：自動印出 pod 狀態、<code>describe</code>、各服務 log 與叢集事件。看 log 的人不用再另外重現。</li>
+</ol>
+
+<h2>幾個設計決定</h2>
+<h3>用 values-ci.yaml 處理 runner 的限制</h3>
+<p>同一個 chart，CI 用另一份 values 檔，這正是 Helm 的用處。和本機相比只有三種差異：</p>
+<ul>
+<li><strong>映像檔</strong>：前綴改成 <code>fab-monitor-</code>、標籤 <code>ci</code>、<code>pullPolicy: Never</code>。只用塞進叢集的那一份，絕不去網路下載。</li>
+<li><strong>資源要求調小</strong>：runner 的 CPU 比較少，要求太多 pod 會排不進去。記憶體上限不變，避免掩蓋真的會 OOM 的問題。</li>
+<li><strong>關掉 HPA</strong>：測試叢集沒有 metrics-server，HPA 會一直等不到數據。</li>
+</ul>
+<p>auth-service 則故意保留 2 份，因為這個測試的重點之一，就是證明兩個 pod 共用同一把金鑰。</p>
+
+<h3>測的是行為，不是「有沒有 Running」</h3>
+<p>pod 顯示 Running 不代表系統能用。所以測試是從閘道打進去，走完登入、查詢、換 pod 後再查。尤其「換掉 auth-service 後 token 仍有效」這一步，把第 5 週手動做的那個實驗變成每次都會自動重跑的檢查。如果有人日後不小心把金鑰又改回「每個 pod 自己產生」，這一步會直接變紅燈。</p>
+
+<h3>失敗時要有證據</h3>
+<p>CI 失敗時 runner 就要銷毀了，你沒辦法事後上去看。所以最後一步 <code>if: failure()</code> 會在失敗時把叢集狀態印進 log。這個習慣和第 6 篇的「把兩大段 stack trace 縮成一行」是同一個道理：出事時最需要的是有證據可看。</p>
+
+<h2>它能抓到、抓不到什麼</h2>
+<p><strong>抓得到</strong>：樣板語法錯誤、values 組合錯誤、映像檔啟動失敗、探針設錯、init container 卡住、Secret 少了、服務之間連不上、金鑰不一致、升級或回滾壞掉。</p>
+<p><strong>抓不到</strong>：效能與負載（HPA 在這裡是關的）、資料持久性（叢集每次都是新的）、真實的雲端行為（AKS 的儲存、Ingress、Key Vault）、以及單元測試才測得到的細節邏輯。這些要靠其他測試，或日後在真的叢集上驗證。它是第一道防線，不是全部。</p>
+
+<h2>如何驗證</h2>
+<ol>
+<li>推送後到 GitHub 倉庫的 <strong>Actions</strong> 頁籤，找到「Kubernetes smoke test」，看每個步驟的狀態。</li>
+<li>也可以在該頁面按「Run workflow」手動觸發，不用改任何檔案。</li>
+<li>想看它真的會抓到問題：在新的分支故意把 <code>deploy/helm/fab-monitor/templates/auth-service.yaml</code> 裡的金鑰掛載拿掉，推上去，「換掉 auth-service 後 token 仍有效」那一步應該會變紅；再還原。</li>
+</ol>
+<p>接下來是 Prometheus 與 Grafana：讓系統不只是「能跑」，還能「看得到它怎麼跑」，包括沒人處理的警報有多少。</p>
+
+<div class="post-nav"><a class="prev" href="13-kubernetes.html"><small>← 上一篇</small>第 5 週：Kubernetes 與 Helm，讓系統自己修復、滾動更新與擴縮</a><a class="next" href="10-pitfalls.html"><small>下一篇 →</small>問題與解法：開發中遇到的七個狀況</a></div>
+</article>
+<aside class="toc" id="toc"><b>本文目錄</b></aside>
+</div>
+
+<footer class="site-footer"><div class="wrap">
+  <p>Fab Monitor 是個人練習專案，以<strong>模擬資料</strong>示範批次與設備事件監控，與任何真實半導體廠或其內部系統無關。</p>
+  <p class="by"><img src="../assets/avatar-sm.jpg" alt="Shawn Chen 的卡通頭像" width="512" height="512">用 Spring Boot、RabbitMQ、PostgreSQL 打造 · 筆記由 <a href="https://github.com/aooal">Shawn Chen</a> 整理 · 2026 年 10 月</p>
+</div></footer>
+<script src="../assets/site.js"></script>
+<script src="../assets/widgets.js"></script>
+</body></html>

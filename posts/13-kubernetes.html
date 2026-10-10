@@ -25,7 +25,7 @@
 
 <div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
 <div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
-  <div class="eyebrow"><i></i>第 11 篇 / 共 13 篇</div>
+  <div class="eyebrow"><i></i>第 11 篇 / 共 14 篇</div>
   <h1><span class="grad">第 5 週：Kubernetes 與 Helm，讓系統自己修復、滾動更新與擴縮</span></h1>
   <div class="meta"><span>約 13 分鐘</span><span class="tag">Kubernetes</span><span class="tag">Helm</span><span class="tag">kind</span></div>
 </div></div>
@@ -187,7 +187,7 @@ helm rollback fab 1 -n fab</code></pre>
 <li>沒有 Ingress，只有 NodePort。</li>
 <li>密碼仍在 values 裡（虛構值）。</li>
 </ul>
-<p>這些都寫進了 ADR 0006。第 6 週的目標，是讓 CI 在拋棄式的 kind 叢集上用 Helm 安裝整個系統，再加上 Prometheus 與 Grafana 看板。</p>
+<p>這些都寫進了 ADR 0006。第 6 週先做的，就是讓 CI 在拋棄式的 kind 叢集上用 Helm 安裝整個系統（見下一篇），再加上 Prometheus 與 Grafana 看板。</p>
 
 <h2>如何驗證</h2>
 <ol>
@@ -198,7 +198,7 @@ helm rollback fab 1 -n fab</code></pre>
 <li><code>helm upgrade --set gateway.replicas=3</code> 後 <code>helm rollback</code>，確認份數變回來。</li>
 </ol>
 
-<div class="post-nav"><a class="prev" href="12-docker.html"><small>← 上一篇</small>第 4 週：Docker、compose 與 CI，一行指令跑起整個系統</a><a class="next" href="10-pitfalls.html"><small>下一篇 →</small>問題與解法：開發中遇到的七個狀況</a></div>
+<div class="post-nav"><a class="prev" href="12-docker.html"><small>← 上一篇</small>第 4 週：Docker、compose 與 CI，一行指令跑起整個系統</a><a class="next" href="14-ci-smoke.html"><small>下一篇 →</small>第 6 週（一）：CI 部署冒煙測試，每次都在新叢集上把系統裝起來</a></div>
 </article>
 <aside class="toc" id="toc"><b>本文目錄</b></aside>
 </div>

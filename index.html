@@ -40,8 +40,8 @@
   <div class="stats">
     <div class="stat reveal"><b data-count="7">0</b><span>已完成的元件（服務、模擬器與操作台）</span></div>
     <div class="stat reveal d1"><b data-count="234">0</b><span>自動化測試，全數通過</span></div>
-    <div class="stat reveal d2"><b data-count="13">0</b><span>篇設計與開發筆記</span></div>
-    <div class="stat reveal d3"><b data-count="6">0</b><span>週開發計畫（目前第 5 週結束）</span></div>
+    <div class="stat reveal d2"><b data-count="14">0</b><span>篇設計與開發筆記</span></div>
+    <div class="stat reveal d3"><b data-count="6">0</b><span>週開發計畫（目前第 6 週進行中）</span></div>
   </div>
 </div></section>
 
@@ -129,11 +129,14 @@
 <a class="post-card reveal d2" href="posts/13-kubernetes.html" data-tags="Kubernetes|Helm|kind" data-search="第 5 週:Kubernetes 與 Helm,讓系統自己修復、滾動更新與擴縮 kind 本機叢集、探針與 init container、滾動更新擋下壞版本、HPA 自動擴縮、把 JWT 金鑰放進 Secret,以及用 Helm 打包與回滾。 Kubernetes Helm kind">
   <span class="no">NOTE 11</span><h3>第 5 週：Kubernetes 與 Helm，讓系統自己修復、滾動更新與擴縮</h3><p>kind 本機叢集、探針與 init container、滾動更新擋下壞版本、HPA 自動擴縮、把 JWT 金鑰放進 Secret，以及用 Helm 打包與回滾。</p>
   <span class="meta">約 13 分鐘 · Kubernetes / Helm / kind</span></a>
-<a class="post-card reveal d3" href="posts/10-pitfalls.html" data-tags="除錯|經驗" data-search="問題與解法:開發中遇到的七個狀況 兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步等問題,以及各自的原因與做法。 除錯 經驗">
-  <span class="no">NOTE 12</span><h3>問題與解法：開發中遇到的七個狀況</h3><p>兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步等問題，以及各自的原因與做法。</p>
+<a class="post-card reveal d3" href="posts/14-ci-smoke.html" data-tags="GitHub Actions|kind|Helm|CI" data-search="第 6 週(一):CI 部署冒煙測試,每次都在新叢集上把系統裝起來 為什麼單元測試抓不到部署問題、冒煙測試的八個步驟、用 values-ci.yaml 配合小機器、把「換掉 auth-service 後 token 仍有效」變成自動檢查。 GitHub Actions kind Helm CI">
+  <span class="no">NOTE 12</span><h3>第 6 週（一）：CI 部署冒煙測試，每次都在新叢集上把系統裝起來</h3><p>為什麼單元測試抓不到部署問題、冒煙測試的八個步驟、用 values-ci.yaml 配合小機器、把「換掉 auth-service 後 token 仍有效」變成自動檢查。</p>
+  <span class="meta">約 9 分鐘 · GitHub Actions / kind / Helm / CI</span></a>
+<a class="post-card reveal d1" href="posts/10-pitfalls.html" data-tags="除錯|經驗" data-search="問題與解法:開發中遇到的七個狀況 兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步等問題,以及各自的原因與做法。 除錯 經驗">
+  <span class="no">NOTE 13</span><h3>問題與解法：開發中遇到的七個狀況</h3><p>兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步等問題，以及各自的原因與做法。</p>
   <span class="meta">約 5 分鐘 · 除錯 / 經驗</span></a>
-<a class="post-card reveal d1" href="posts/11-industry.html" data-tags="業界對照|Kafka|MQTT" data-search="業界怎麼做?SECS/GEM、MQTT、Kafka 與雲端服務對照 模擬專案跟真實半導體廠的差距在哪?換掉 RabbitMQ 之後,exchange 與 queue 會變成什麼? 業界對照 Kafka MQTT">
-  <span class="no">NOTE 13</span><h3>業界怎麼做？SECS/GEM、MQTT、Kafka 與雲端服務對照</h3><p>模擬專案跟真實半導體廠的差距在哪？換掉 RabbitMQ 之後，exchange 與 queue 會變成什麼？</p>
+<a class="post-card reveal d2" href="posts/11-industry.html" data-tags="業界對照|Kafka|MQTT" data-search="業界怎麼做?SECS/GEM、MQTT、Kafka 與雲端服務對照 模擬專案跟真實半導體廠的差距在哪?換掉 RabbitMQ 之後,exchange 與 queue 會變成什麼? 業界對照 Kafka MQTT">
+  <span class="no">NOTE 14</span><h3>業界怎麼做？SECS/GEM、MQTT、Kafka 與雲端服務對照</h3><p>模擬專案跟真實半導體廠的差距在哪？換掉 RabbitMQ 之後，exchange 與 queue 會變成什麼？</p>
   <span class="meta">約 8 分鐘 · 業界對照 / Kafka / MQTT</span></a>
   </div>
   <p class="no-match" id="noMatch" hidden>沒有符合的文章，換個關鍵字或標籤試試。</p>
@@ -159,7 +162,7 @@
     <div class="tl-item done reveal d2"><h3>第 3 週 · alarm-service、auth-service、api-gateway、操作台 <span class="tag done">完成</span></h3><p>機台 DOWN 時產生告警、恢復時關閉、可確認；RS256 JWT 與輪替的 refresh token；唯一的對外閘道與角色規則；Vue 3 操作台。</p></div>
     <div class="tl-item done reveal d3"><h3>第 4 週 · Docker 與 CI <span class="tag done">完成</span></h3><p>每個服務的 Dockerfile、一行指令啟動整個系統、CI 推映像檔到 GHCR；警報記錄「誰關的」並標出沒人處理的警報，模擬器改成更貼近真實的故障。</p></div>
     <div class="tl-item done reveal d1"><h3>第 5 週 · Kubernetes 與 Helm <span class="tag done">完成</span></h3><p>kind 本機叢集、探針與啟動順序、滾動更新與回滾、HPA 自動擴縮、JWT 簽章金鑰放進 Secret、Helm chart（install / upgrade / rollback）。</p></div>
-    <div class="tl-item now reveal d2"><h3>第 6 週 · CD、監控、文件 <span class="tag now">下一步</span></h3><p>自動部署、Prometheus + Grafana 看板、README 與架構決策紀錄（ADR）收尾。</p></div>
+    <div class="tl-item now reveal d2"><h3>第 6 週 · CD、監控、文件 <span class="tag now">進行中</span></h3><p>已完成：CI 部署冒煙測試（拋棄式 kind 叢集 + Helm 安裝 + 登入與機台清單檢查）。接下來：Prometheus + Grafana 看板、README 與架構決策紀錄（ADR）收尾。</p></div>
   </div>
 </div></section>
 
