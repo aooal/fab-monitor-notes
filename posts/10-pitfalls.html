@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>問題與解法：開發中遇到的七個狀況 · Fab Monitor 開發筆記</title>
-<meta name="description" content="兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步等問題,以及各自的原因與做法。">
+<title>問題與解法：開發中遇到的九個狀況 · Fab Monitor 開發筆記</title>
+<meta name="description" content="兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步、多副本搶著建帳號等問題,以及各自的原因與做法。">
 <link rel="icon" href="../assets/avatar-sm.jpg">
 <link rel="stylesheet" href="../assets/style.css">
 <script>try{var t=localStorage.getItem("theme")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
@@ -26,7 +26,7 @@
 <div class="post-hero"><div class="blob b1"></div><div class="blob b2"></div>
 <div style="position:relative;width:min(1060px,100% - 40px);margin:0 auto">
   <div class="eyebrow"><i></i>第 14 篇 / 共 15 篇</div>
-  <h1><span class="grad">問題與解法：開發中遇到的七個狀況</span></h1>
+  <h1><span class="grad">問題與解法：開發中遇到的九個狀況</span></h1>
   <div class="meta"><span>約 5 分鐘</span><span class="tag">除錯</span><span class="tag">經驗</span></div>
 </div></div>
 <div class="layout">
@@ -46,9 +46,11 @@
 <tr><td>5</td><td>模擬器每次重啟都要手動重設機台</td><td>模擬器自己記一份狀態，與 equipment-service 的真實狀態不一致</td><td>啟動時先向 equipment-service 讀取真實狀態再開始</td></tr>
 <tr><td>6</td><td>CI 為整合測試設定了不必要的資料庫服務</td><td>整合測試已改用 Testcontainers，自己啟動容器</td><td>移除 workflow 中的資料庫服務並加上說明</td></tr>
 <tr><td>7</td><td>失敗訊息白等 3 秒，且印出兩大段 stack trace</td><td>所有例外一律重試，兩個框架元件各印一次</td><td>區分業務錯誤與技術錯誤、單行 log（見上一篇）</td></tr>
+<tr><td>8</td><td>在 Kubernetes 冷啟動時，有些服務的 <code>RESTARTS</code> 變成 1</td><td>服務比自己的資料庫先起來，連不上就當掉，等 Kubernetes 重啟</td><td>加 init container，用 <code>pg_isready</code> 等資料庫接受連線才啟動主容器</td></tr>
+<tr><td>9</td><td>兩個 auth-service pod 同時在空資料庫啟動，其中一個啟動失敗</td><td>兩邊都先查「帳號不存在」再新增，唯一約束只放行一個，輸的那個丟出重複鍵例外</td><td>接住這個例外，視為「別的 pod 已建好」，記日誌後繼續；用單元測試固定這個行為</td></tr>
 </tbody></table>
 
-<h2>三個最重要的觀察</h2>
+<h2>四個最重要的觀察</h2>
 
 <h3>1. 同一份狀態存兩處，就需要同步機制（#1、#5）</h3>
 <p>模擬器存一份機台狀態，equipment-service 也存一份。兩者一旦不同步，系統就進入矛盾狀態，只能手動修復。原則是：<strong>狀態要嘛只有一份真相，要嘛有明確的同步方式</strong>。這個問題最後促成了「啟動時對齊」。</p>
@@ -58,6 +60,9 @@
 
 <h3>3. 錯誤要能被重現、被看見（#7）</h3>
 <p>模擬器刻意送出的壞訊息，提供穩定的素材來觀察失敗路徑；而 log 太長就等於沒有 log，一行摘要加原因才算可觀測。</p>
+
+<h3>4. 「先查再新增」遇到多副本一定會撞（#9）</h3>
+<p>單一程式裡「如果不存在就新增」很安全；兩個副本同時跑時，兩邊可能同時看到「不存在」。解法不是在應用程式裡加鎖，而是讓資料庫的唯一約束當裁判，應用程式只要接住「輸了」的結果，並判斷這其實是可以接受的。第 4 篇的冪等消費用的是同一個想法。</p>
 
 <div class="callout tip"><b class="t">排查順序</b><p>遇到「系統狀態不對勁」時，先確認有沒有多個副本同時在跑（#1），再確認服務是不是用新版本重新啟動了，最後才往更深處查。多數問題在前兩步就能釐清。</p></div>
 

@@ -39,7 +39,7 @@
 <section class="block" id="stats"><div class="wrap">
   <div class="stats">
     <div class="stat reveal"><b data-count="7">0</b><span>已完成的元件（服務、模擬器與操作台）</span></div>
-    <div class="stat reveal d1"><b data-count="234">0</b><span>自動化測試，全數通過</span></div>
+    <div class="stat reveal d1"><b data-count="239">0</b><span>自動化測試，全數通過</span></div>
     <div class="stat reveal d2"><b data-count="15">0</b><span>篇設計與開發筆記</span></div>
     <div class="stat reveal d3"><b data-count="6">0</b><span>週開發計畫（目前第 6 週進行中）</span></div>
   </div>
@@ -135,8 +135,8 @@
 <a class="post-card reveal d1" href="posts/15-monitoring.html" data-tags="Prometheus|Grafana|可觀測性" data-search="第 6 週(二):Prometheus 與 Grafana,看見有沒有人漏掉警報 指標怎麼從 Spring Boot 流到儀表板、從資料庫算出的警報業務指標、Kubernetes 上的服務探索、同一組檔案給 compose 與 Helm,以及跑起來後死信佇列被看見的那一刻。 Prometheus Grafana 可觀測性">
   <span class="no">NOTE 13</span><h3>第 6 週（二）：Prometheus 與 Grafana，看見有沒有人漏掉警報</h3><p>指標怎麼從 Spring Boot 流到儀表板、從資料庫算出的警報業務指標、Kubernetes 上的服務探索、同一組檔案給 compose 與 Helm，以及跑起來後死信佇列被看見的那一刻。</p>
   <span class="meta">約 12 分鐘 · Prometheus / Grafana / 可觀測性</span></a>
-<a class="post-card reveal d2" href="posts/10-pitfalls.html" data-tags="除錯|經驗" data-search="問題與解法:開發中遇到的七個狀況 兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步等問題,以及各自的原因與做法。 除錯 經驗">
-  <span class="no">NOTE 14</span><h3>問題與解法：開發中遇到的七個狀況</h3><p>兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步等問題，以及各自的原因與做法。</p>
+<a class="post-card reveal d2" href="posts/10-pitfalls.html" data-tags="除錯|經驗" data-search="問題與解法:開發中遇到的九個狀況 兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步、多副本搶著建帳號等問題,以及各自的原因與做法。 除錯 經驗">
+  <span class="no">NOTE 14</span><h3>問題與解法：開發中遇到的九個狀況</h3><p>兩個模擬器同時跑、queue 未綁定導致訊息消失、狀態不同步、多副本搶著建帳號等問題，以及各自的原因與做法。</p>
   <span class="meta">約 5 分鐘 · 除錯 / 經驗</span></a>
 <a class="post-card reveal d3" href="posts/11-industry.html" data-tags="業界對照|Kafka|MQTT" data-search="業界怎麼做?SECS/GEM、MQTT、Kafka 與雲端服務對照 模擬專案跟真實半導體廠的差距在哪?換掉 RabbitMQ 之後,exchange 與 queue 會變成什麼? 業界對照 Kafka MQTT">
   <span class="no">NOTE 15</span><h3>業界怎麼做？SECS/GEM、MQTT、Kafka 與雲端服務對照</h3><p>模擬專案跟真實半導體廠的差距在哪？換掉 RabbitMQ 之後，exchange 與 queue 會變成什麼？</p>
@@ -196,7 +196,7 @@
 <section class="block"><div class="wrap">
   <h2 class="sec-title reveal">用到的技術</h2>
   <p class="sec-sub reveal">標示「規劃」的尚未實作。</p>
-  <div class="chips reveal"><span class="chip">Java 21</span><span class="chip">Spring Boot 4</span><span class="chip">Spring AMQP</span><span class="chip">RabbitMQ</span><span class="chip">PostgreSQL 17</span><span class="chip">Flyway</span><span class="chip">JPA / Hibernate</span><span class="chip">Spring Security</span><span class="chip">Spring Cloud Gateway</span><span class="chip">JWT (RS256)</span><span class="chip">Vue 3 / Vite / TypeScript</span><span class="chip">PrimeVue</span><span class="chip">Testcontainers</span><span class="chip">ArchUnit</span><span class="chip">JUnit</span><span class="chip">Maven</span><span class="chip">Docker Compose</span><span class="chip">Kubernetes (kind)</span><span class="chip">Helm</span><span class="chip">Prometheus</span><span class="chip">Grafana</span><span class="chip">GitHub Actions</span><span class="chip">Kubernetes（規劃）</span><span class="chip">Helm（規劃）</span><span class="chip">Prometheus / Grafana（規劃）</span></div>
+  <div class="chips reveal"><span class="chip">Java 21</span><span class="chip">Spring Boot 4</span><span class="chip">Spring AMQP</span><span class="chip">RabbitMQ</span><span class="chip">PostgreSQL 17</span><span class="chip">Flyway</span><span class="chip">JPA / Hibernate</span><span class="chip">Spring Security</span><span class="chip">Spring Cloud Gateway</span><span class="chip">JWT (RS256)</span><span class="chip">Vue 3 / Vite / TypeScript</span><span class="chip">PrimeVue</span><span class="chip">Testcontainers</span><span class="chip">ArchUnit</span><span class="chip">JUnit</span><span class="chip">Maven</span><span class="chip">Docker</span><span class="chip">Docker Compose</span><span class="chip">Kubernetes (kind)</span><span class="chip">Helm</span><span class="chip">Micrometer</span><span class="chip">Prometheus</span><span class="chip">Grafana</span><span class="chip">GitHub Actions</span><span class="chip">ghcr.io</span><span class="chip">持續部署 CD（規劃）</span></div>
 </div></section>
 
 <footer class="site-footer"><div class="wrap">

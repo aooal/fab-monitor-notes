@@ -136,6 +136,7 @@
 <li><strong>readinessProbe</strong>：失敗就把這個 pod 從 Service 的名單裡拿掉，但<strong>不重啟</strong>。處理「暫時忙不過來，或還沒準備好」。</li>
 </ul>
 <p>啟動順序則用 <strong>init container</strong>：在主容器之前先跑的小容器，必須成功才會往下。equipment-service 的 init container 會一直 <code>curl</code> alarm-service 的 readiness 端點，直到通過為止，保證 alarm-service 已經宣告好它的 queue（第 3 篇提過的事件消失問題）。種子 Job 也一樣，先等 equipment-service 就緒再註冊機台。</p>
+<p>每個服務還有第二個 init container，用 PostgreSQL 映像檔附的 <code>pg_isready</code> 每 2 秒問一次自己的資料庫，通了才啟動主容器。一開始我沒做這個，冷啟動時服務比資料庫先醒來，連不上就當掉，Kubernetes 重啟它一次才恢復；雖然最後都會好，但 <code>RESTARTS</code> 欄不是 0，看起來就像有問題。加上之後冷啟動不再重啟。</p>
 <p>我也做了「自癒」實驗：手動刪掉一個 pod，Deployment 立刻補上新的，服務不中斷。</p>
 
 <h2>步驟三：滾動更新、回滾與自動擴縮</h2>
@@ -157,14 +158,14 @@
 <p>解法是讓金鑰獨立於 pod 的生命週期：用 <code>scripts/make-jwt-secret.ps1</code> 在本機產生私鑰（<code>.secrets/</code>，已被 Git 忽略），建成叢集裡的 Secret <code>jwt-key</code>，以檔案形式掛進 pod，auth-service 透過環境變數 <code>AUTH_JWT_PRIVATE_KEY_PATH</code> 讀它。因為 key id 是公鑰的指紋，同一把金鑰在所有 pod 算出來都一樣，閘道抓到的公鑰集合也一致。</p>
 <p>驗證方式很直觀：登入操作台，執行 <code>kubectl rollout restart deployment/auth-service</code>，畫面不用重新登入，資料持續更新。以前這會把所有人踢出去。</p>
 <div class="callout warn"><b class="t">私鑰不能進 Git</b><p>這個 Secret 刻意不放進任何 YAML 或 chart，由腳本在本機建立。資料庫與 RabbitMQ 的密碼雖然也在 Secret，但那是虛構的開發值；真正的系統會從 Key Vault 這類金鑰管理服務取得。</p></div>
-<p>已知的小風險：兩個 pod 同時對一個全新的資料庫建立第一批帳號，可能互相搶，輸的那個會重啟一次後恢復。正確做法是資料庫層的唯一約束加上略過重複，列入待辦。</p>
+<p>這裡還有一個小問題，我後來修掉了：兩個 pod 同時對一個全新的資料庫建立第一批帳號時，兩邊都先查到「帳號不存在」，都去新增，資料庫的唯一約束只放行其中一個，輸的那個丟出重複鍵的例外，啟動失敗後重啟。修法是在建立帳號的地方接住這個例外，視為「別的 pod 已經建好了」，記一行日誌後繼續。仲裁交給資料庫，應用程式只負責接住結果（細節見第 10 篇的 #9）。</p>
 
 <h2>步驟五：用 Helm 打包</h2>
 <p>到這裡有十幾個 YAML，而且很多地方是複製貼上：四個資料庫幾乎一樣，每個服務都有同樣的探針與更新策略。Helm 是 Kubernetes 的套件管理員，<strong>chart</strong> 是樣板加預設值，<strong>values 檔</strong>是各環境覆寫。對 .NET 開發者來說，像是 NuGet 套件加上 <code>appsettings.{Environment}.json</code>。</p>
 <ul>
 <li><code>values.yaml</code> 放預設（映像檔、份數、資源、HPA 開關）；<code>values-kind.yaml</code> 只放本機差異，也就是三個 NodePort。</li>
 <li>四個資料庫用一個 <code>range</code> 迴圈從設定產生，不再有四份複製貼上的檔案。</li>
-<li>共用片段放在 <code>_helpers.tpl</code>：探針、更新策略、RabbitMQ 連線、「等待另一個服務」的 init container。</li>
+<li>共用片段放在 <code>_helpers.tpl</code>：探針、更新策略、RabbitMQ 連線、「等待另一個服務」與「等待自己的資料庫」兩種 init container。</li>
 <li>閘道 Deployment 帶著 ConfigMap 的雜湊值（<code>checksum/config</code>）。ConfigMap 變了，pod 範本也跟著變，<code>helm upgrade</code> 才會真的重啟閘道。</li>
 <li>種子 Job 是 Helm hook（安裝與升級後執行，下次執行前先刪掉舊的）。Job 建好之後不能修改，不這樣做，第二次 <code>helm upgrade</code> 就會失敗。</li>
 <li>命名空間與 <code>jwt-key</code> 不在 chart 裡。</li>
@@ -182,12 +183,11 @@ helm rollback fab 1 -n fab</code></pre>
 
 <h2>已知的限制</h2>
 <ul>
-<li>服務不會等自己的資料庫，冷啟動時有些 pod 會重啟一次，然後恢復。</li>
 <li>映像檔還是手動 <code>kind load</code>；上雲端時要改從 ghcr.io 或 ACR 拉。</li>
 <li>沒有 Ingress，只有 NodePort。</li>
 <li>密碼仍在 values 裡（虛構值）。</li>
 </ul>
-<p>這些都寫進了 ADR 0006。第 6 週先做的，就是讓 CI 在拋棄式的 kind 叢集上用 Helm 安裝整個系統（見下一篇），再加上 Prometheus 與 Grafana 看板。</p>
+<p>這些都寫進了 ADR 0006（原本還有「不等資料庫」與「帳號競爭」兩項，後來都修掉了，見上面）。第 6 週先做的，就是讓 CI 在拋棄式的 kind 叢集上用 Helm 安裝整個系統（見下一篇），再加上 Prometheus 與 Grafana 看板。</p>
 
 <h2>如何驗證</h2>
 <ol>
