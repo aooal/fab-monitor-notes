@@ -98,7 +98,7 @@
 <figure class="shot"><img src="../assets/img/grafana-after-ack.webp" alt="Grafana 儀表板:未確認警報歸零、進行中警報歸零、錯過的警報累計 39" loading="lazy"><figcaption>確認之後：未確認與進行中都回到 0（綠色）。「錯過的警報」累計 39 筆，因為 demo 模式的機台故障又自動修好得很快，多半來不及有人確認。</figcaption></figure>
 <p>最有趣的是這張：</p>
 <figure class="shot"><img src="../assets/img/prom-alert-dlq.webp" alt="Prometheus Alerts 頁:DeadLetterMessages 為 FIRING,數值 2" loading="lazy"><figcaption>DeadLetterMessages 規則觸發：死信佇列裡有 2 則訊息。</figcaption></figure>
-<p>儀表板上的「Dead-letter messages」是紅色的 2，Alerts 頁的規則也跟著 Firing。這不是壞掉，而是規則找到了真的東西：第 2 篇與第 6 篇提過，模擬器會<strong>故意送出格式錯誤的訊息</strong>來測試死信佇列的路徑，業務錯誤不重試、直接進 dead-letter。這兩則應該就是它們，在 RabbitMQ 管理頁的 <code>*.dlq</code> 佇列可以看到內容。以前這些訊息悄悄躺在佇列裡，沒人知道；現在有數字、有顏色、有告警。這就是可觀測性的價值：不是為了畫漂亮的圖，而是讓「悄悄發生的事」被看見。</p>
+<p>儀表板上的「Dead-letter messages」是紅色的 2，Alerts 頁的規則也跟著 Firing。這不是壞掉，而是規則找到了真的東西：第 2 篇與第 6 篇提過，模擬器會<strong>故意送出格式錯誤的訊息</strong>來測試死信佇列的路徑，業務錯誤不重試、直接進 dead-letter。我到 RabbitMQ 管理頁的 <code>equipment-service.machine-events.dlq</code> 看過內容，確實是模擬器送的 <code>{"eventId": "not-a-uuid", ...</code> 這種殘缺 JSON，被 equipment-service 拒絕一次後就進了 dead-letter，沒有無限重試。模擬器開著的時候會不定時送，所以這個數字會隨時間慢慢累積。以前這些訊息悄悄躺在佇列裡，沒人知道；現在有數字、有顏色、有告警。這就是可觀測性的價值：不是為了畫漂亮的圖，而是讓「悄悄發生的事」被看見。</p>
 
 <h2>為什麼不把 Grafana 整合進操作台</h2>
 <p>我考慮過把監控畫面合併進 8088 的操作台，決定<strong>各自獨立</strong>。操作台給值班人員「處理事情」（確認警報、改狀態），Grafana 給維運與開發「看系統與趨勢」，兩種人要的畫面不同；Grafana 本身已是完整的產品（查詢、告警、權限、編輯），用 iframe 嵌入需要削弱它的安全設定，自己重畫則一定比它陽春；兩邊的登入系統也不同，整合要做單一登入，是另一個專案的規模；最後，「系統壞了還能看到哪裡壞」，所以監控不該依賴被監控的前端。折衷做法是在操作台標題列加一個連結，開新分頁到 Grafana。</p>
