@@ -46,7 +46,7 @@
   /* ------------------------------------------------------------------ diagram draw-on */
   $$(".diagram").forEach(function (d) {
     var svg = $("svg", d);
-    if (!svg || reduce || !("IntersectionObserver" in window) || !svg.animate) return;
+    if (!svg || d.classList.contains("static") || reduce || !("IntersectionObserver" in window) || !svg.animate) return;
     var nodes = $$("g.node", svg), paths = $$("path.flow", svg);
     nodes.forEach(function (n) { n.style.opacity = 0; });
     var played = false;

@@ -37,6 +37,75 @@
 <p>一句話：你<strong>宣告</strong>「我要這個映像檔跑 2 份」，Kubernetes 就持續地讓現實符合宣告。pod 掛了它重建，節點掛了它搬家，你改了宣告它慢慢換過去。它不處理資料的佇列順序（那是 RabbitMQ 的事），也不只是流量分配；流量分配只是其中一個功能（Service）。</p>
 <div class="callout net"><b class="t">給 .NET 開發者的對照</b><p>Deployment 像是「保證這個程序永遠有 N 個在跑的 Windows 服務管理員」；Service 像是這 N 個程序前面的內部負載平衡器加一個固定的主機名稱；ConfigMap 與 Secret 像 <code>appsettings.json</code> 與 Key Vault 的參照。</p></div>
 
+<h2>這些工具的層次關係</h2>
+<p>Docker、kind、Kubernetes、Pod、HPA、Helm 常被混在一起講，其實是不同層的東西：</p>
+<div class="diagram static reveal">
+<svg viewBox="0 0 960 470" role="img" aria-label="Docker、kind、Kubernetes、Pod、HPA 與 Helm 的層次關係:Docker 裡跑一個 kind 節點容器,節點裡是 Kubernetes,Kubernetes 管理 Pod;HPA 是 Kubernetes 內的控制器;Helm 與 kubectl 從外面把 YAML 送進 Kubernetes">
+<defs>
+  <marker id="k-arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#38e1c0"/></marker>
+  <marker id="k-arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8b7bff"/></marker>
+</defs>
+
+<!-- layer 1: Docker -->
+<g class="node"><rect style="fill:transparent" x="20" y="20" width="640" height="430" rx="18"/>
+  <text x="40" y="50" font-weight="700">① Docker：跑容器的引擎</text>
+  <text class="small" x="40" y="68">你的電腦（或 CI 執行機）上，容器真正是在這一層執行</text></g>
+
+<!-- layer 2: kind node -->
+<g class="node"><rect style="fill:transparent" x="45" y="85" width="590" height="345" rx="16"/>
+  <text x="65" y="112" font-weight="700">② kind 節點：Docker 裡的一個容器，假裝成一台機器</text></g>
+
+<!-- layer 3: Kubernetes -->
+<g class="node svc"><rect style="fill:transparent" x="70" y="130" width="540" height="285" rx="14"/>
+  <text x="90" y="156" font-weight="700">③ Kubernetes：替這台「機器」管理容器</text></g>
+
+<!-- pods -->
+<text class="small" x="95" y="190">④ Pod：最小單位，包著一個容器（用完即丟）</text>
+<g class="node svc"><rect x="95" y="205" width="120" height="44" rx="10"/><text x="155" y="232" text-anchor="middle">lot-service</text></g>
+<g class="node svc"><rect x="235" y="205" width="120" height="44" rx="10"/><text x="295" y="232" text-anchor="middle">lot-service</text></g>
+<g class="node svc"><rect x="95" y="265" width="120" height="44" rx="10"/><text x="155" y="292" text-anchor="middle">auth-service</text></g>
+<g class="node svc"><rect x="235" y="265" width="120" height="44" rx="10"/><text x="295" y="292" text-anchor="middle">auth-service</text></g>
+<g class="node svc"><rect x="95" y="325" width="120" height="44" rx="10"/><text x="155" y="352" text-anchor="middle">api-gateway</text></g>
+<g class="node svc"><rect x="235" y="325" width="120" height="44" rx="10"/><text x="295" y="352" text-anchor="middle">PostgreSQL</text></g>
+
+<!-- control plane -->
+<g class="node mq"><rect x="395" y="170" width="195" height="225" rx="12"/>
+  <text x="492" y="196" text-anchor="middle" font-weight="700">控制平面</text>
+  <text class="small" x="492" y="214" text-anchor="middle">持續比對「宣告」與「現況」</text></g>
+<g class="node svc"><rect x="410" y="228" width="165" height="30" rx="8"/><text x="492" y="248" text-anchor="middle">Deployment 控制器</text></g>
+<g class="node planned"><rect x="410" y="268" width="165" height="30" rx="8" style="stroke:#ffb86b"/><text x="492" y="288" text-anchor="middle">⑤ HPA 控制器</text></g>
+<text class="small" x="492" y="318" text-anchor="middle">Service：固定名稱 + 分流</text>
+<text class="small" x="492" y="336" text-anchor="middle">Secret / ConfigMap：設定</text>
+<text class="small" x="492" y="358" text-anchor="middle">→ 建立、補上、換掉 Pod</text>
+<text class="small" x="492" y="382" text-anchor="middle">API 入口：外部工具由此進來</text>
+
+<path class="flow live" d="M395 287 L358 287" marker-end="url(#k-arr)"/>
+
+<!-- outside tools -->
+<g class="node mq"><rect x="690" y="40" width="250" height="100" rx="14"/>
+  <text x="815" y="72" text-anchor="middle" font-weight="700">⑥ Helm</text>
+  <text class="small" x="815" y="94" text-anchor="middle">套件管理員：chart + values</text>
+  <text class="small" x="815" y="112" text-anchor="middle">→ 產生 YAML 並送出</text>
+  <text class="small" x="815" y="130" text-anchor="middle">install · upgrade · rollback</text></g>
+<g class="node mq"><rect x="690" y="165" width="250" height="70" rx="14"/>
+  <text x="815" y="196" text-anchor="middle" font-weight="700">kubectl</text>
+  <text class="small" x="815" y="216" text-anchor="middle">指令列：查看與操作叢集</text></g>
+<path class="flow live" d="M690 90 C650 90 650 205 592 205" style="stroke:#8b7bff" marker-end="url(#k-arr2)"/>
+<path class="flow live" d="M690 200 L650 200 C630 200 625 250 592 250" style="stroke:#8b7bff" marker-end="url(#k-arr2)"/>
+
+<g class="node planned"><rect x="690" y="265" width="250" height="165" rx="14"/>
+  <text x="815" y="295" text-anchor="middle" font-weight="700">搬到 Azure AKS 時</text>
+  <text class="small" x="815" y="320" text-anchor="middle">只有 ① ② 這兩層</text>
+  <text class="small" x="815" y="338" text-anchor="middle">換成雲端託管的叢集</text>
+  <text class="small" x="815" y="368" text-anchor="middle">③ ~ ⑥ 與 YAML、chart</text>
+  <text class="small" x="815" y="386" text-anchor="middle">原封不動，只多一個</text>
+  <text class="small" x="815" y="404" text-anchor="middle">values-aks.yaml</text></g>
+</svg>
+<div class="legend"><span><i style="background:#38e1c0"></i>Kubernetes 的工作：維持現況</span><span><i style="background:#8b7bff"></i>外部工具送進來的 YAML</span><span><i style="background:#ffb86b"></i>HPA：依 CPU 增減份數</span></div>
+</div>
+<p>讀圖的方式是由外往內：①Docker 提供容器；②kind 用一個 Docker 容器扮成一台機器；③在這台「機器」裡跑著 Kubernetes；④Kubernetes 管理的是一個個 Pod。⑤HPA 不是獨立程式，而是 Kubernetes 控制平面裡的一個控制器，負責調整份數。⑥Helm 和 kubectl 都在叢集<strong>外面</strong>，只是把 YAML 或指令送給 Kubernetes 的 API，真正執行的人是 Kubernetes。</p>
+<p>一句話記：<strong>Docker 跑容器 → kind 用 Docker 做出叢集 → Kubernetes 管理叢集裡的 Pod → HPA 是 Kubernetes 的自動擴縮功能 → Helm 是 Kubernetes 的安裝工具。</strong></p>
+
 <h2>本機叢集：kind</h2>
 <p>kind（Kubernetes in Docker）用 Docker 容器當作叢集的節點，免費、一分鐘建好、刪掉也乾淨。我選它而不是直接上 AKS，是因為 Kubernetes 的物件（Deployment、Service、Secret）在各家雲端都一樣，<strong>可以移植的是 YAML 與 Helm chart</strong>，不可移植的只有叢集本身。每個環境不同的部分（流量怎麼進來、儲存類型、映像檔從哪來、密碼從哪來）我都放在 values 檔裡，以後要上 AKS 只需要多一個 <code>values-aks.yaml</code>。</p>
 <p>kind 的設定檔 <code>deploy/kind-cluster.yaml</code> 做了一件事：把你電腦的 8080、8088、15672 埠對應到叢集節點的 30080、30088、30672，這樣瀏覽器才連得到叢集裡的服務。這是整個專案唯一 kind 專屬的檔案。</p>
